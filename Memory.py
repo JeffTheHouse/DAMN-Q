@@ -10,11 +10,11 @@ class Direction:
         
 
 class Quantum_memory:
-    def __init__(self, id, direction, delay = 0, capacity = 100, fifo = 1):
+    def __init__(self, id, depolarization_p, delay = 0, capacity = 100, fifo = 1):
         self.id = id
         self.delay = delay
+        self.depolarization_p = depolarization_p
         self.fifo = fifo
-        self.direction = Direction(direction)
         self.ch_in_q = Handler(self.handle_receive)
         self.ch_in_c = Handler(self.handle_classic)
         self.ch_in_paired_memory = Handler(self.handle_paired_memory)
@@ -26,10 +26,7 @@ class Quantum_memory:
         self.memory = {}
         self.temperory_memory = {}
         self.paired_memory_message = None
-        self.direction_signal()
 
-    def direction_signal(self):
-        scheduler.add(0,lambda: self.ch_out_q.emit(self.direction))
     
     def handle_paired_memory(self, message):
         time_stamp = min(self.temperory_memory.keys())
@@ -62,7 +59,9 @@ class Quantum_memory:
 
     def handle_classic(self, request):
         if self.fifo == 1:
+            passed_time = scheduler._time - min(self.memory.keys())
             emited_qubit = self.memory.pop(min(self.memory.keys()))
+            emited_qubit = emited_qubit.state.depolarizing_channel(self.depolarization_p**passed_time)
             scheduler.add(self.delay, lambda: self.ch_out_q.emit(emited_qubit))
 
 

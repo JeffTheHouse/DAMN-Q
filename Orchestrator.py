@@ -23,7 +23,7 @@ class Orchestrator:
         self.counter_memory_2 += message
         self.coppler()
             
-    def coppler(self, ch_in_number):
+    def coppler(self):
         if self.counter_memory_1 != 0 and self.counter_memory_2 != 0:
             self.counter_memory_1 -=1
             self.counter_memory_2 -=1
