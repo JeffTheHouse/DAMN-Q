@@ -19,44 +19,54 @@ class Entaglment_swapping_module:
         self.measurement_values = ["00", "01", "10", "11"]
     
     def entanglement_swap(self):
-        if self.qubit_1 and self.qubit_2 != None:
+        if self.qubit_1 is not None and self.qubit_2 is not None:
             measurement_result =  random.choice(self.measurement_values)
-            for i in range(2):
-               if self.qubit_1.state.density_matrix [i][measurement_result [1]] != 0:
-                   density_matrix = np.zeros(2,2)
-                   density_matrix [i][i] = 1
-                   self.qubit_1.state.density_matrix = density_matrix
-                   self.qubit_1.state = None
-                   scheduler.add(0, lambda: self.ch_out_c_1.emit(measurement_result))
-                   
+            print(f"measurment: {measurement_result}")
+            """print(f"qubit 1: {self.qubit_1.state.density_matrix}")
+            print(f"qubit 1 shape: {np.shape(self.qubit_1.state.density_matrix)}")
+            print(f"qubit 2: {self.qubit_2.state.density_matrix}")
+            print(f"qubit 2 shape: {np.shape(self.qubit_2.state.density_matrix)}")"""
 
             for i in range(2):
-               if self.qubit_2.state.density_matrix [measurement_result [1]] [i] != 0:
-                   density_matrix = np.zeros(2,2)
-                   density_matrix [i][i] = 1
-                   self.qubit_2.state.density_matrix = density_matrix
-                   self.qubit_2.state = None
-                   scheduler.add(0, lambda: self.ch_out_c_2.emit(measurement_result))
+                if self.qubit_1.state.density_matrix[int(str(i) + measurement_result[0], 2)][int(str(i) + measurement_result[0],2)] != 0:
+                    self.qubit_1.state.density_matrix = np.zeros((2,2))
+                    self.qubit_1.state.density_matrix [i][i] = 1
+                    print(f"qubit1 : {self.qubit_1.state.density_matrix}")
+                    break
 
-                   
-               
+            for i in range(2):    
+                if self.qubit_2.state.density_matrix[int(str(i) + measurement_result[1], 2)][int(str(i) + measurement_result[1],2)] != 0:
+                    self.qubit_2.state.density_matrix = np.zeros((2,2))
+                    self.qubit_2.state.density_matrix [i][i] = 1 
+                    print(f"qubit2 : {self.qubit_2.state.density_matrix}")
+                    break
 
+            self.qubit_1.state , self.qubit_2.state = None, None
+            self.qubit_1 , self.qubit_2 = None, None
 
+            if measurement_result[0] == 1:
+                measurement_result[1] = bin(measurement_result[1]) + 1
 
-        self.qubit_1, self.qubit_2 = None
+            scheduler.add(0, lambda: self.ch_out_c_1.emit(measurement_result))
+            scheduler.add(0, lambda: self.ch_out_c_2.emit(measurement_result))
+        else:
+            pass
+
+            
+        
 
         
 
 
     def handle_qubit_1(self, qubit):
-        if self.qubit_1 == None:
+        if self.qubit_1 == None and np.shape(qubit.state.density_matrix) [0] == 4 :
             self.qubit_1 = qubit
             self.entanglement_swap()
         else:
             print(f"ERROR: Entanglement swapper is doublefed on a side")
     
     def handle_qubit_2(self, qubit):
-        if self.qubit_2 == None:
+        if self.qubit_2 == None and np.shape(qubit.state.density_matrix) [0] == 4:
             self.qubit_2 = qubit
             self.entanglement_swap()
         else:

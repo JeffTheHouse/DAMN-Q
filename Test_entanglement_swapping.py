@@ -15,8 +15,8 @@ source_b = Source(2,1,2)
 
 memory_a_1 = Quantum_memory(1,0,0,100)
 memory_a_2 = Quantum_memory(2,0,0,100)
-memory_b_1 = Quantum_memory(3,1,0,100)
-memory_b_2 = Quantum_memory(4,1,0,100)
+memory_b_1 = Quantum_memory(3,0,0,100)
+memory_b_2 = Quantum_memory(4,0,0,100)
 
 es = Entaglment_swapping_module(1, 1)
 orchestrator = Orchestrator(1,0)
@@ -38,24 +38,28 @@ connect(pc.ch_out_q, m_2.in_ch, 1)
 connect(memory_a_2.ch_out_q, es.ch_in_q_1, 1)
 connect(memory_b_1.ch_out_q, es.ch_in_q_2, 1)
 """Classic communication: Orchestrator and memories"""
-connect(memory_a_2.ch_out_c, orchestrator.ch_in_memory_1)
-connect(memory_b_1.ch_out_c, orchestrator.ch_in_memory_2)
+connect(memory_a_2.ch_out_c, orchestrator.ch_in_memory_1,1)
+connect(memory_b_1.ch_out_c, orchestrator.ch_in_memory_2,1)
+"""Classic communication Orchestrator and Memories"""
+connect(orchestrator.ch_out_memory_1, memory_a_2.ch_in_c,1)
+connect(orchestrator.ch_out_memory_2, memory_b_1.ch_in_c,1)
 """Classic communication: entanglement-swapper, measurer and pauli corrector"""
-connect(es.ch_out_c_1, m_1.ch_in_es)
-connect(es.ch_out_c_2, pc.ch_in_es)
+connect(es.ch_out_c_1, m_1.ch_in_es,1)
+connect(es.ch_out_c_2, pc.ch_in_es,1)
 """Classic communication: memories"""
-connect(memory_a_1.ch_out_paired_memory, memory_a_2.ch_in_paired_memory)
-connect(memory_a_2.ch_out_paired_memory, memory_a_1.ch_in_paired_memory)
-connect(memory_b_1.ch_out_paired_memory, memory_b_2.ch_in_paired_memory)
-connect(memory_b_2.ch_out_paired_memory, memory_b_1.ch_in_paired_memory)
+connect(memory_a_1.ch_out_paired_memory, memory_a_2.ch_in_paired_memory,1)
+connect(memory_a_2.ch_out_paired_memory, memory_a_1.ch_in_paired_memory,1)
+connect(memory_b_1.ch_out_paired_memory, memory_b_2.ch_in_paired_memory,1)
+connect(memory_b_2.ch_out_paired_memory, memory_b_1.ch_in_paired_memory,1)
 """Classic communication: measurer and memory"""
-connect(memory_a_1.ch_out_c, m_1.ch_in_memory_c)
-connect(m_1.ch_out_memory_c, memory_a_1.ch_in_c)
+connect(memory_a_1.ch_out_c, m_1.ch_in_memory_c,1)
+connect(m_1.ch_out_memory_c, memory_a_1.ch_in_c,1)
 """Classic communication: Pauli corrector and memory"""
-connect(memory_b_2.ch_out_c, pc.ch_in_memory)
-connect(pc.ch_out_memory, memory_b_2.ch_in_c)
+connect(memory_b_2.ch_out_c, pc.ch_in_memory,1)
+connect(pc.ch_out_memory, memory_b_2.ch_in_c,1)
+"""Classic communication: the output"""
 
-scheduler.run(10)
+scheduler.run(20)
 
 
 

@@ -15,38 +15,9 @@ class Measuring_Device:
         
 
     def handle(self, qubit):
-        print(f"measurer: {self.id}")
+        #print(f"measurer: {self.id}")
         if qubit.state != None:
             result = measure(self.id_generator_measurement.generate(), qubit, self.x_basis_p)
-            scheduler.add( self.delay, lambda: print(f"the result is {result.result}"))
+            #scheduler.add( self.delay, lambda: print(f"the result is {result.result}"))
         else:
             scheduler.add(self.delay, lambda: print(f"Qubit went missing in measurer {self.id}"))
-
-
-"""# Density matrix of the qubit
-rho = np.array([[1, 0], [0, 0]])
-
-# Projectors for the computational basis
-proj_0 = np.array([[1, 0], [0, 0]])
-proj_1 = np.array([[0, 0], [0, 1]])
-
-# Calculate probabilities of each outcome
-prob_0 = np.trace(np.matmul(rho, proj_0))
-prob_1 = np.trace(np.matmul(rho, proj_1))
-
-print("Density matrix of the qubit:")
-print(rho)
-print("\nProbabilities of measurement outcomes:")
-print(f"P(|0⟩) = {prob_0}")
-print(f"P(|1⟩) = {prob_1}")
-
-# Perform the measurement
-if random.random() < prob_0:
-    print("\nMeasurement outcome: |0⟩")
-    rho = proj_0
-else:
-    print("\nMeasurement outcome: |1⟩")
-    rho = proj_1
-
-print("\nDensity matrix after measurement:")
-print(rho)"""

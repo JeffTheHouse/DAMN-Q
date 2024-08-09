@@ -61,7 +61,7 @@ class Quantum_memory:
         if self.fifo == 1:
             passed_time = scheduler._time - min(self.memory.keys())
             emited_qubit = self.memory.pop(min(self.memory.keys()))
-            emited_qubit = emited_qubit.state.depolarizing_channel(self.depolarization_p**passed_time)
+            emited_qubit.state.depolarizing_channel(self.depolarization_p**passed_time)
             scheduler.add(self.delay, lambda: self.ch_out_q.emit(emited_qubit))
 
 

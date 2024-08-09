@@ -23,16 +23,19 @@ class Pauli_corrector:
     
 
     def handle_es_c(self, message):
+        self.message = message
         scheduler.add(0, lambda: self.ch_out_memory.emit(1))
 
     
     def handle_qubit(self, qubit):
+        print(f"PC recieved qubit")
         if isinstance(qubit, Qubit):
             if self.message[0] == 1:
                 qubit =  x_operator * qubit * x_operator
             if self.message[1] == 1:
                 qubit = z_operator * qubit * z_operator
             self.memory_qubit_counter -= 1
+            #print(f"AAAAAAAAA {qubit.state.density_matrix}")
             scheduler.add(self.delay, lambda: self.ch_out_q.emit(qubit))
 
     
