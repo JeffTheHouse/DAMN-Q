@@ -13,7 +13,7 @@ measurer_2 = Measuring_Device(2, 0)
 
 bind(source.out_ch_1, link_1.ch_in)
 bind(source.out_ch_2, link_2.ch_in)
-bind(link_1.ch_out, measurer_1.in_ch)
-bind(link_2.ch_out, measurer_2.in_ch)
+bind(link_1.ch_out, measurer_1.ch_in_q)
+bind(link_2.ch_out, measurer_2.ch_in_q)
 
 scheduler.run(10)

@@ -28,14 +28,17 @@ class Pauli_corrector:
 
     
     def handle_qubit(self, qubit):
-        print(f"PC recieved qubit")
         if isinstance(qubit, Qubit):
-            if self.message[0] == 1:
-                qubit =  x_operator * qubit * x_operator
-            if self.message[1] == 1:
-                qubit = z_operator * qubit * z_operator
+            print(f"F1 {qubit.state.density_matrix} and received measurment: {self.message}")
+            if self.message[1] == "1":
+                qubit.state.density_matrix =  np.dot(np.dot(x_operator, qubit.state.density_matrix), x_operator)
+                print(f"F2 {qubit.state.density_matrix} and received measurment: {self.message}")
+                
+            if self.message[0] == "1":
+                qubit.state.density_matrix = np.dot(np.dot(z_operator, qubit.state.density_matrix), z_operator)
+                print(f"F3 {qubit.state.density_matrix} and received measurment: {self.message}")
             self.memory_qubit_counter -= 1
-            #print(f"AAAAAAAAA {qubit.state.density_matrix}")
+            self.message = None
             scheduler.add(self.delay, lambda: self.ch_out_q.emit(qubit))
 
     

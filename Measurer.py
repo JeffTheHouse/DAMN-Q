@@ -10,14 +10,15 @@ class Measuring_Device:
         self.delay = delay
         self.p_depolarization_depolarization= p_depolarization
         self.x_basis_p = x_basis_p
-        self.in_ch = Handler(self.handle)
+        self.ch_in_q = Handler(self.handle)
+        self.ch_out_result = Emitter()
         self.id_generator_measurement = Id_generator()
         
 
     def handle(self, qubit):
-        #print(f"measurer: {self.id}")
         if qubit.state != None:
             result = measure(self.id_generator_measurement.generate(), qubit, self.x_basis_p)
-            #scheduler.add( self.delay, lambda: print(f"the result is {result.result}"))
+            scheduler.add( self.delay, lambda: self.ch_out_result.emit(result.result))
+            scheduler.add( self.delay, lambda: print(f"the result of measurer {self.id} is {result.result}"))
         else:
             scheduler.add(self.delay, lambda: print(f"Qubit went missing in measurer {self.id}"))

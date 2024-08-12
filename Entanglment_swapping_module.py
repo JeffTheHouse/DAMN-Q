@@ -22,30 +22,32 @@ class Entaglment_swapping_module:
         if self.qubit_1 is not None and self.qubit_2 is not None:
             measurement_result =  random.choice(self.measurement_values)
             print(f"measurment: {measurement_result}")
-            """print(f"qubit 1: {self.qubit_1.state.density_matrix}")
-            print(f"qubit 1 shape: {np.shape(self.qubit_1.state.density_matrix)}")
-            print(f"qubit 2: {self.qubit_2.state.density_matrix}")
-            print(f"qubit 2 shape: {np.shape(self.qubit_2.state.density_matrix)}")"""
+           
 
             for i in range(2):
                 if self.qubit_1.state.density_matrix[int(str(i) + measurement_result[0], 2)][int(str(i) + measurement_result[0],2)] != 0:
                     self.qubit_1.state.density_matrix = np.zeros((2,2))
                     self.qubit_1.state.density_matrix [i][i] = 1
-                    print(f"qubit1 : {self.qubit_1.state.density_matrix}")
+                    #print(f"qubit1 : {self.qubit_1.state.density_matrix}")
                     break
 
             for i in range(2):    
                 if self.qubit_2.state.density_matrix[int(str(i) + measurement_result[1], 2)][int(str(i) + measurement_result[1],2)] != 0:
                     self.qubit_2.state.density_matrix = np.zeros((2,2))
                     self.qubit_2.state.density_matrix [i][i] = 1 
-                    print(f"qubit2 : {self.qubit_2.state.density_matrix}")
+                    #print(f"qubit2 : {self.qubit_2.state.density_matrix}")
                     break
 
             self.qubit_1.state , self.qubit_2.state = None, None
             self.qubit_1 , self.qubit_2 = None, None
 
-            if measurement_result[0] == 1:
-                measurement_result[1] = bin(measurement_result[1]) + 1
+            if int(measurement_result[0]) == 1:
+                if int(measurement_result[1]) == 1:
+                    measurement_result= "10"
+                else:
+                    measurement_result = "01"
+                
+                
 
             scheduler.add(0, lambda: self.ch_out_c_1.emit(measurement_result))
             scheduler.add(0, lambda: self.ch_out_c_2.emit(measurement_result))

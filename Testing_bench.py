@@ -17,7 +17,7 @@ link = Link(1, 1, 0)
 measurer = Measuring_Device(1, 1, 0)
 
 bind(source.out_ch_1, link.ch_in)
-bind(link.ch_out, measurer.in_ch)
+bind(link.ch_out, measurer.ch_in_q)
 
 scheduler.run(10)
 

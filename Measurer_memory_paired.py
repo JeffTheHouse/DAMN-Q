@@ -38,7 +38,8 @@ class Measurer_memory_paired:
     
     def handle_qubit(self, qubit):
         measurment_id = self.id_generator_measurement.generate()
-        output = Measurement_output(measurment_id, measure(self.id_generator_measurement.generate(), qubit, self.x_basis_p), self.es_message)
-        scheduler.add(self.delay, lambda: self.ch_out_result.emit(output))
+        result = measure(measurment_id, qubit, self.x_basis_p)
+        print(f"the result of measurer {self.id} is {result.result}")
+        scheduler.add(self.delay, lambda: self.ch_out_result.emit(result.result))
         
         

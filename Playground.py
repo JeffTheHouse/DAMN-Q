@@ -1,4 +1,5 @@
 import numpy as np
+from Operators import*
 a = np.array([[.5,0,0,.5],
             [0,0,0,0],
             [0,0,0,0],
@@ -6,7 +7,11 @@ a = np.array([[.5,0,0,.5],
 
 x = np.array([[a]])
 
-c = bin(0)
-b = bin(1)
-print(int(str("11"),2))
-#print(bin(int(str(c)[2:] + str(b)[2:]))[2:].zfill(2))
+b = np.array([[1,0],
+            [0,0]])
+
+print(f"Y = {np.dot(np.dot(x_operator, b), x_operator) }")
+
+
+
+
