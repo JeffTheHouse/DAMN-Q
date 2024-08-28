@@ -1,4 +1,3 @@
-# DAMN-Q
+***DAMN-Q***
 A discrete-event, modular, lossy and noisy quantum network simulator!
-Please run [test_entanglement_swapping](./Test_entanglement_swapping.py)
-Or other tests!
+Please check the [Tutorial](./Tutorial.ipynb)
