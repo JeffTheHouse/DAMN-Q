@@ -4,7 +4,10 @@ from Id_generator import*
 class Source:
     def __init__(self, id, delay, type):
         self.id = id
-        self.delay = delay
+        if delay <= 0:
+            raise ValueError("Source needs a delay bigger than zero!")
+        else:
+            self.delay = delay
         self.type = type
         self.id_generator = Id_generator()
         self.out_ch_1 = Emitter()
