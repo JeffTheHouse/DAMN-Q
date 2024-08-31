@@ -21,21 +21,18 @@ class Entaglment_swapping_module:
     def entanglement_swap(self):
         if self.qubit_1 is not None and self.qubit_2 is not None:
             measurement_result =  random.choice(self.measurement_values)
-            print(f"measurment: {measurement_result}")
            
 
             for i in range(2):
                 if self.qubit_1.state.density_matrix[int(str(i) + measurement_result[0], 2)][int(str(i) + measurement_result[0],2)] != 0:
                     self.qubit_1.state.density_matrix = np.zeros((2,2))
                     self.qubit_1.state.density_matrix [i][i] = 1
-                    #print(f"qubit1 : {self.qubit_1.state.density_matrix}")
                     break
 
             for i in range(2):    
                 if self.qubit_2.state.density_matrix[int(str(i) + measurement_result[1], 2)][int(str(i) + measurement_result[1],2)] != 0:
                     self.qubit_2.state.density_matrix = np.zeros((2,2))
                     self.qubit_2.state.density_matrix [i][i] = 1 
-                    #print(f"qubit2 : {self.qubit_2.state.density_matrix}")
                     break
 
             self.qubit_1.state , self.qubit_2.state = None, None

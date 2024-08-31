@@ -19,6 +19,3 @@ class Measuring_Device:
         if qubit.state != None:
             result = measure(self.id_generator_measurement.generate(), qubit, self.x_basis_p)
             scheduler.add( self.delay, lambda: self.ch_out_result.emit(result.result))
-            scheduler.add( self.delay, lambda: print(f"the result of measurer {self.id} is {result.result}"))
-        else:
-            scheduler.add(self.delay, lambda: print(f"Qubit went missing in measurer {self.id}"))

@@ -1,8 +1,6 @@
 from Scheduler import*
-from Emitter import*
 from Measurer_memory_paired import*
 from Measurer import*
-from Link import*
 from Pauli_corrector import*
 from Source import*
 from Entanglment_swapping_module import*
@@ -64,10 +62,10 @@ connect(pc.ch_out_memory, memory_b_2.ch_in_c)
 connect(m_a.ch_out_result, reader.input_2)
 connect(m_b.ch_out_result, reader.input_1)
 
-scheduler.run(30)
+scheduler.run(1000)
 
 
-
+print(f" Number of: 00:{reader.count_00}, 01:{reader.count_01}, 10:{reader.count_10}, 11:{reader.count_11}")
 
 
 
