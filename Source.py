@@ -17,7 +17,7 @@ class Source:
     
     def prepare(self):
         if self.type == 1:
-            qubit = Qubit(self.id_generator.generate, State(np.array([[1 , 0],[0 , 0]])))
+            qubit = Qubit(self.id_generator.generate(), State(np.array([[1 , 0],[0 , 0]])))
             self.out_ch_1.emit(qubit)
         elif self.type == 2:
             qubit_1 , qubit_2 = Qubit.bell_state(self.id_generator.generate(), self.id_generator.generate(), State(np.array([[.5,0,0,.5],

@@ -24,10 +24,6 @@ def test_same_tick_arrivals_do_not_overwrite():
     assert len(mem.temperory_memory) == 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Source.prepare (type=1) passes self.id_generator.generate without calling it.",
-)
 def test_single_qubit_source_assigns_integer_id():
     src = Source(1, delay=1, type=1)
     received = []

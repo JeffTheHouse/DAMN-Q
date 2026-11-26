@@ -10,8 +10,16 @@ class State:
     def depolarizing_channel(self, p):
         if np.shape(self.density_matrix) [0] == 4: 
             self.density_matrix = (1 - 4*p/3 ) * self.density_matrix + ((4*p/3) * ((1/4) * np.identity(4)))
-        elif np.shape(self.density_matrix) [0] == 2:
-            self.density_matrix = (1 - p) * self.density_matrix + p/3 * np.dot(x_y_z_sum, np.dot(self.density_matrix, x_y_z_sum))
+        elif np.shape(self.density_matrix)[0] == 2:
+            rho = self.density_matrix
+            self.density_matrix = (
+                (1 - p) * rho
+                + (p / 3) * (
+                    x_operator @ rho @ x_operator
+                    + y_operator @ rho @ y_operator
+                    + z_operator @ rho @ z_operator
+                )
+            )
 
     def loss_channel(self):
         if np.shape(self.density_matrix) [0] == 4:

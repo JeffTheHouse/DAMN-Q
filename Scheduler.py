@@ -1,41 +1,73 @@
-from queue import PriorityQueue, Empty
+import heapq
 import itertools
-import random
+
+
+class EventHandle:
+    """Handle returned by Scheduler.add() allowing event cancellation."""
+
+    def __init__(self, time, seq, callback):
+        self.time = time
+        self.seq = seq
+        self.callback = callback
+        self._cancelled = False
+
+    @property
+    def cancelled(self):
+        return self._cancelled
+
+    def cancel(self):
+        self._cancelled = True
+
+
 class Scheduler:
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        if not hasattr(self, '_initialized'):
-            self._queue = PriorityQueue()
-            self._time = 0
-            self._counter = itertools.count()
-            self._initialized = True
+        self._queue = []
+        self._time = 0
+        self._counter = itertools.count()
+
+    @property
+    def time(self):
+        return self._time
 
     def add(self, delay, callback):
-        item = (self._time + delay, next(self._counter), callback)
-        self._queue.put(item)
+        if delay < 0:
+            raise ValueError("Event delay must be non-negative.")
+        event_time = self._time + delay
+        seq = next(self._counter)
+        handle = EventHandle(event_time, seq, callback)
+        heapq.heappush(self._queue, (event_time, seq, handle))
+        return handle
+
+    def cancel(self, handle):
+        handle.cancel()
+
+    def _discard_cancelled(self):
+        while self._queue and self._queue[0][2].cancelled:
+            heapq.heappop(self._queue)
+
+    def step(self, until=None):
+        """Execute the next non-cancelled event if within `until`.
+
+        Returns True if an event was executed, False otherwise.
+        """
+        self._discard_cancelled()
+        if not self._queue:
+            return False
+        event_time, _, handle = self._queue[0]
+        if until is not None and event_time > until:
+            return False
+        heapq.heappop(self._queue)
+        self._time = event_time
+        handle.callback()
+        return True
 
     def run(self, until):
-        step = until / 100
-        next_step = 0
-        try:
-            while True:
-                (time, _, callback) = self._queue.get(block=False)
-                if time > next_step:
-                    print(int(next_step), "/", until)
-                    next_step += step
-                if time > until:
-                    return
-                self._time = time
-                callback()
-        except Empty:
+        while self.step(until=until):
             pass
+        if until > self._time:
+            self._time = until
 
     def reset(self):
-        self._queue = PriorityQueue()
+        self._queue = []
         self._time = 0
+        self._counter = itertools.count()

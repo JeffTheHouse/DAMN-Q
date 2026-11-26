@@ -14,10 +14,6 @@ def test_events_execute_in_time_order():
     assert fired == [("first", 2), ("second", 5)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Scheduler.run pops and discards the first event beyond the run horizon.",
-)
 def test_event_beyond_horizon_is_preserved():
     fired = []
     scheduler.add(10, lambda: fired.append(scheduler._time))
@@ -29,11 +25,62 @@ def test_event_beyond_horizon_is_preserved():
     assert fired == [10]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Scheduler is currently a process-wide singleton sharing clock and queue.",
-)
 def test_scheduler_instances_are_isolated():
     s1 = Scheduler()
     s2 = Scheduler()
     assert s1 is not s2
+
+    fired_1 = []
+    fired_2 = []
+    s1.add(3, lambda: fired_1.append(s1.time))
+    s2.add(5, lambda: fired_2.append(s2.time))
+
+    s1.run(10)
+    assert fired_1 == [3]
+    assert fired_2 == []
+    assert s2.time == 0
+
+    s2.run(10)
+    assert fired_2 == [5]
+
+
+def test_same_time_events_preserve_fifo_order():
+    s = Scheduler()
+    order = []
+    s.add(2, lambda: order.append("a"))
+    s.add(2, lambda: order.append("b"))
+    s.add(2, lambda: order.append("c"))
+
+    s.run(5)
+    assert order == ["a", "b", "c"]
+
+
+def test_step_and_cancellation():
+    s = Scheduler()
+    fired = []
+    h1 = s.add(1, lambda: fired.append("e1"))
+    h2 = s.add(2, lambda: fired.append("e2"))
+    s.add(3, lambda: fired.append("e3"))
+
+    s.cancel(h2)
+    assert h2.cancelled
+    assert not h1.cancelled
+
+    assert s.step(until=0.5) is False
+    assert fired == []
+
+    assert s.step() is True
+    assert fired == ["e1"]
+    assert s.time == 1
+
+    assert s.step() is True
+    assert fired == ["e1", "e3"]
+    assert s.time == 3
+
+    assert s.step() is False
+
+
+def test_negative_delay_raises():
+    s = Scheduler()
+    with pytest.raises(ValueError):
+        s.add(-1, lambda: None)
