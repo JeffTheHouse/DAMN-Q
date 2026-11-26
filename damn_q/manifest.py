@@ -50,8 +50,8 @@ COMPONENT_MANIFEST = {
         "model": "Ideal state preparation (|0> or |Phi+>)",
         "version": "1.0",
         "ports": {
-            "out_ch_1": {"direction": "out", "kind": "quantum", "label": "Qubit out 1"},
-            "out_ch_2": {"direction": "out", "kind": "quantum", "label": "Qubit out 2"},
+            "out_ch_1": {"direction": "out", "kind": "quantum", "label": "Qubit out 1", "max_connections": 1},
+            "out_ch_2": {"direction": "out", "kind": "quantum", "label": "Qubit out 2", "max_connections": 1, "active_when": {"type": 2}},
         },
         "parameters": {
             "delay": {
@@ -81,12 +81,37 @@ COMPONENT_MANIFEST = {
         "model": "Slot-based memory with local per-tick Pauli depolarization",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
-            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out"},
-            "ch_in_c": {"direction": "in", "kind": "classical", "label": "Readout request"},
-            "ch_out_c": {"direction": "out", "kind": "classical", "label": "Slot ready"},
-            "ch_in_paired_memory": {"direction": "in", "kind": "classical", "label": "Peer herald in"},
-            "ch_out_paired_memory": {"direction": "out", "kind": "classical", "label": "Peer herald out"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},
+            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out", "max_connections": 1},
+            "ch_in_c": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Readout request",
+                "message_type": "MemoryReadoutRequest",
+                "accepts": ["MemoryReadoutRequest", "BellOutcome"],
+                "max_connections": 1,
+            },
+            "ch_out_c": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Slot ready",
+                "message_type": "MemoryReady",
+                "max_connections": None,
+            },
+            "ch_in_paired_memory": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Peer herald in",
+                "message_type": "PeerHerald",
+                "max_connections": 1,
+            },
+            "ch_out_paired_memory": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Peer herald out",
+                "message_type": "PeerHerald",
+                "max_connections": 1,
+            },
         },
         "parameters": {
             "depolarization_p": {
@@ -136,10 +161,22 @@ COMPONENT_MANIFEST = {
         "model": "Ideal projective Bell-basis measurement",
         "version": "1.0",
         "ports": {
-            "ch_in_q_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1"},
-            "ch_in_q_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2"},
-            "ch_out_c_1": {"direction": "out", "kind": "classical", "label": "Bell outcome 1"},
-            "ch_out_c_2": {"direction": "out", "kind": "classical", "label": "Bell outcome 2"},
+            "ch_in_q_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1", "max_connections": 1},
+            "ch_in_q_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2", "max_connections": 1},
+            "ch_out_c_1": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Bell outcome 1",
+                "message_type": "BellOutcome",
+                "max_connections": None,
+            },
+            "ch_out_c_2": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Bell outcome 2",
+                "message_type": "BellOutcome",
+                "max_connections": None,
+            },
         },
         "parameters": {
             "delay": {
@@ -161,10 +198,34 @@ COMPONENT_MANIFEST = {
         "model": "Matches ready slots from two memories and requests readout",
         "version": "1.0",
         "ports": {
-            "ch_in_memory_1": {"direction": "in", "kind": "classical", "label": "Slot ready 1"},
-            "ch_in_memory_2": {"direction": "in", "kind": "classical", "label": "Slot ready 2"},
-            "ch_out_memory_1": {"direction": "out", "kind": "classical", "label": "Readout request 1"},
-            "ch_out_memory_2": {"direction": "out", "kind": "classical", "label": "Readout request 2"},
+            "ch_in_memory_1": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Slot ready 1",
+                "message_type": "MemoryReady",
+                "max_connections": 1,
+            },
+            "ch_in_memory_2": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Slot ready 2",
+                "message_type": "MemoryReady",
+                "max_connections": 1,
+            },
+            "ch_out_memory_1": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Readout request 1",
+                "message_type": "MemoryReadoutRequest",
+                "max_connections": 1,
+            },
+            "ch_out_memory_2": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Readout request 2",
+                "message_type": "MemoryReadoutRequest",
+                "max_connections": 1,
+            },
         },
         "parameters": {
             "delay": {
@@ -184,11 +245,29 @@ COMPONENT_MANIFEST = {
         "model": "Applies X and Z Pauli corrections from the Bell outcome",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
-            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out"},
-            "ch_in_es": {"direction": "in", "kind": "classical", "label": "Bell outcome"},
-            "ch_in_memory": {"direction": "in", "kind": "classical", "label": "Slot ready"},
-            "ch_out_memory": {"direction": "out", "kind": "classical", "label": "Readout request"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},
+            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out", "max_connections": 1},
+            "ch_in_es": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Bell outcome",
+                "message_type": "BellOutcome",
+                "max_connections": 1,
+            },
+            "ch_in_memory": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Slot ready",
+                "message_type": "MemoryReady",
+                "max_connections": 1,
+            },
+            "ch_out_memory": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Readout request",
+                "message_type": "MemoryReadoutRequest",
+                "max_connections": 1,
+            },
         },
         "parameters": {
             "delay": {
@@ -210,8 +289,14 @@ COMPONENT_MANIFEST = {
         "model": "Ideal projective single-qubit measurement in X or Z basis",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
-            "ch_out_result": {"direction": "out", "kind": "classical", "label": "Outcome out"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},
+            "ch_out_result": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Outcome out",
+                "message_type": "MeasurementOutcome",
+                "max_connections": None,
+            },
         },
         "parameters": {
             "delay": {
@@ -252,11 +337,35 @@ COMPONENT_MANIFEST = {
         "model": "Requests memory readout on Bell outcome, then measures in X or Z basis",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
-            "ch_in_es": {"direction": "in", "kind": "classical", "label": "Bell outcome"},
-            "ch_in_memory_c": {"direction": "in", "kind": "classical", "label": "Slot ready"},
-            "ch_out_memory_c": {"direction": "out", "kind": "classical", "label": "Readout request"},
-            "ch_out_result": {"direction": "out", "kind": "classical", "label": "Outcome out"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},
+            "ch_in_es": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Bell outcome",
+                "message_type": "BellOutcome",
+                "max_connections": 1,
+            },
+            "ch_in_memory_c": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Slot ready",
+                "message_type": "MemoryReady",
+                "max_connections": 1,
+            },
+            "ch_out_memory_c": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Readout request",
+                "message_type": "MemoryReadoutRequest",
+                "max_connections": 1,
+            },
+            "ch_out_result": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Outcome out",
+                "message_type": "MeasurementOutcome",
+                "max_connections": None,
+            },
         },
         "parameters": {
             "delay": {
@@ -297,8 +406,20 @@ COMPONENT_MANIFEST = {
         "model": "Pairs two classical outcome streams by arrival order (00/01/10/11)",
         "version": "1.0",
         "ports": {
-            "input_1": {"direction": "in", "kind": "classical", "label": "Outcome in 1"},
-            "input_2": {"direction": "in", "kind": "classical", "label": "Outcome in 2"},
+            "input_1": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Outcome in 1",
+                "message_type": "MeasurementOutcome",
+                "max_connections": 1,
+            },
+            "input_2": {
+                "direction": "in",
+                "kind": "classical",
+                "label": "Outcome in 2",
+                "message_type": "MeasurementOutcome",
+                "max_connections": 1,
+            },
         },
         "parameters": {},
     },
@@ -308,10 +429,10 @@ COMPONENT_MANIFEST = {
         "model": "Counts arrivals and forwards only qubits in 4x4 (two-qubit) registers",
         "version": "1.0",
         "ports": {
-            "input_a_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1"},
-            "input_a_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2"},
-            "output_a_1": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 1"},
-            "output_a_2": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 2"},
+            "input_a_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1", "max_connections": 1},
+            "input_a_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2", "max_connections": 1},
+            "output_a_1": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 1", "max_connections": 1},
+            "output_a_2": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 2", "max_connections": 1},
         },
         "parameters": {
             "trace": {
@@ -333,7 +454,7 @@ COMPONENT_MANIFEST = {
         "model": "Retains arriving qubit handles for run-end density-matrix inspection",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},
         },
         "parameters": {},
     },

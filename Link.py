@@ -1,14 +1,15 @@
 from Emitter import*
 from Qubits import*
 class Link:
-    def __init__(self, id, delay, depolarization_p, loss_p = 0, sim=None):
+    def __init__(self, id, delay, depolarization_p, loss_p = 0, sim=None, kind=None):
         self.id = id
         self.delay = delay
         self.depolarization_p = depolarization_p
         self.loss_p = loss_p
         self.sim = sim if sim is not None else scheduler
-        self.ch_in = Handler(self.handle_receive, sim=self.sim)
-        self.ch_out = Emitter(sim=self.sim)
+        self.kind = kind
+        self.ch_in = Handler(self.handle_receive, sim=self.sim, kind=kind, max_connections=1)
+        self.ch_out = Emitter(sim=self.sim, kind=kind, max_connections=1)
 
     def handle_receive(self, qubit):
         if isinstance(qubit, Qubit) and qubit.state is not None:

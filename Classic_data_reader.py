@@ -5,8 +5,8 @@ class Classic_data_reader:
     def __init__(self, id, sim=None):
         self.id = id
         self.sim = sim
-        self.input_1 = Handler(self.result_1, sim=self.sim)
-        self.input_2 = Handler(self.result_2, sim=self.sim)
+        self.input_1 = Handler(self.result_1, sim=self.sim, kind="classical", max_connections=1)
+        self.input_2 = Handler(self.result_2, sim=self.sim, kind="classical", max_connections=1)
         self.list_1 = []
         self.list_2 = []
         self.count_success = 0

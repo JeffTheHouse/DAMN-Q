@@ -31,7 +31,7 @@ class EndpointProbe:
     def __init__(self, id, sim):
         self.id = id
         self.sim = sim
-        self.ch_in_q = Handler(self.handle_qubit)
+        self.ch_in_q = Handler(self.handle_qubit, sim=self.sim, kind="quantum", max_connections=1)
         self.qubits = []
 
     def handle_qubit(self, qubit):

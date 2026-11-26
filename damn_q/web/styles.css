@@ -337,6 +337,12 @@ select:focus, input:focus {
   filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.45));
 }
 
+.edge-path.invalid {
+  stroke: var(--err);
+  stroke-dasharray: 4 3;
+  opacity: 0.95;
+}
+
 .edge-hit {
   fill: none;
   stroke: transparent;
@@ -461,6 +467,11 @@ select:focus, input:focus {
   background: rgba(34, 197, 94, 0.2);
   color: #bbf7d0;
   outline: 1px solid var(--ok);
+}
+
+.port.inactive {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .port-name {

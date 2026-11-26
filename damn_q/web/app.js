@@ -205,6 +205,77 @@
     return "";
   }
 
+  function isPortActive(comp, pspec) {
+    if (!pspec || !pspec.active_when) return true;
+    const spec = getSpec(comp.type);
+    const paramsSpec = spec ? spec.parameters || {} : {};
+    for (const [k, expected] of Object.entries(pspec.active_when)) {
+      const actual = comp.params && comp.params[k] !== undefined
+        ? comp.params[k]
+        : (paramsSpec[k] ? paramsSpec[k].default : undefined);
+      if (actual !== expected) return false;
+    }
+    return true;
+  }
+
+  function portConnectionCount(compId, portName, direction) {
+    if (!state.doc) return 0;
+    return state.doc.connections.filter((c) =>
+      direction === "out"
+        ? c.from.component === compId && c.from.port === portName
+        : c.to.component === compId && c.to.port === portName
+    ).length;
+  }
+
+  function classicalTypesCompatible(srcSpec, dstSpec) {
+    const srcMt = srcSpec.message_type;
+    if (!srcMt) return true;
+    if (Array.isArray(dstSpec.accepts)) return dstSpec.accepts.includes(srcMt);
+    if (dstSpec.message_type) return dstSpec.message_type === srcMt;
+    return true;
+  }
+
+  function checkWireAllowed(srcCompId, srcPortName, dstCompId, dstPortName) {
+    const srcComp = getComp(srcCompId);
+    const dstComp = getComp(dstCompId);
+    const srcSpec = srcComp ? getSpec(srcComp.type)?.ports?.[srcPortName] : null;
+    const dstSpec = dstComp ? getSpec(dstComp.type)?.ports?.[dstPortName] : null;
+    if (!srcSpec || !dstSpec) return { ok: false, reason: "Unknown port" };
+    if (srcSpec.direction !== "out" || dstSpec.direction !== "in") {
+      return { ok: false, reason: "Connections must go from output to input" };
+    }
+    if (!isPortActive(srcComp, srcSpec)) {
+      return { ok: false, reason: `${srcCompId}.${srcPortName} is inactive under current parameters` };
+    }
+    if (!isPortActive(dstComp, dstSpec)) {
+      return { ok: false, reason: `${dstCompId}.${dstPortName} is inactive under current parameters` };
+    }
+    if (srcSpec.kind !== dstSpec.kind) {
+      return { ok: false, reason: `Incompatible port kinds (${srcSpec.kind} -> ${dstSpec.kind})` };
+    }
+    if (srcSpec.kind === "classical" && !classicalTypesCompatible(srcSpec, dstSpec)) {
+      return {
+        ok: false,
+        reason: `Incompatible classical message (${srcSpec.message_type} -> ${dstSpec.accepts ? dstSpec.accepts.join("/") : dstSpec.message_type})`,
+      };
+    }
+    const dup = state.doc.connections.some(
+      (c) =>
+        c.from.component === srcCompId &&
+        c.from.port === srcPortName &&
+        c.to.component === dstCompId &&
+        c.to.port === dstPortName
+    );
+    if (dup) return { ok: false, reason: "Duplicate connection" };
+    if (srcSpec.max_connections != null && portConnectionCount(srcCompId, srcPortName, "out") >= srcSpec.max_connections) {
+      return { ok: false, reason: `${srcCompId}.${srcPortName} already has its maximum (${srcSpec.max_connections}) connection` };
+    }
+    if (dstSpec.max_connections != null && portConnectionCount(dstCompId, dstPortName, "in") >= dstSpec.max_connections) {
+      return { ok: false, reason: `${dstCompId}.${dstPortName} already has its maximum (${dstSpec.max_connections}) connection` };
+    }
+    return { ok: true };
+  }
+
   function renderNodes() {
     els.nodeLayer.innerHTML = "";
     for (const comp of state.doc.components) {
@@ -246,8 +317,11 @@
           portEl.dataset.port = pname;
           portEl.dataset.direction = pspec.direction;
           portEl.dataset.kind = pspec.kind;
+          const active = isPortActive(comp, pspec);
           const portDisplay = pspec.label || pname;
-          portEl.title = `${comp.id}.${pname} — ${portDisplay} (${pspec.direction}, ${pspec.kind})`;
+          const msgTag = pspec.message_type ? `, ${pspec.message_type}` : "";
+          portEl.title = `${comp.id}.${pname} — ${portDisplay} (${pspec.direction}, ${pspec.kind}${msgTag})${active ? "" : " [inactive]"}`;
+          if (!active) portEl.classList.add("inactive");
 
           const dot = `<span class="port-dot ${pspec.kind}"></span>`;
           const label = `<span class="port-name">${escapeHtml(portDisplay)}</span>`;
@@ -256,7 +330,10 @@
           if (state.wiring) {
             if (state.wiring.component === comp.id && state.wiring.port === pname) {
               portEl.classList.add("wire-source");
-            } else if (pspec.direction === "in" && pspec.kind === state.wiring.kind) {
+            } else if (
+              pspec.direction === "in" &&
+              checkWireAllowed(state.wiring.component, state.wiring.port, comp.id, pname).ok
+            ) {
               portEl.classList.add("wire-compatible");
             }
           }
@@ -356,7 +433,17 @@
       const path = document.createElementNS(svgNS, "path");
       path.setAttribute("d", d);
       const isSelected = state.selected && state.selected.type === "connection" && state.selected.index === idx;
-      path.setAttribute("class", `edge-path ${kind}${isSelected ? " selected" : ""}`);
+      const srcComp = getComp(conn.from.component);
+      const dstComp = getComp(conn.to.component);
+      const srcPSpec = srcComp ? getSpec(srcComp.type)?.ports?.[conn.from.port] : null;
+      const dstPSpec = dstComp ? getSpec(dstComp.type)?.ports?.[conn.to.port] : null;
+      const isInactiveEdge =
+        (srcComp && srcPSpec && !isPortActive(srcComp, srcPSpec)) ||
+        (dstComp && dstPSpec && !isPortActive(dstComp, dstPSpec));
+      path.setAttribute(
+        "class",
+        `edge-path ${kind}${isSelected ? " selected" : ""}${isInactiveEdge ? " invalid" : ""}`
+      );
 
       els.edgeLayer.appendChild(hit);
       els.edgeLayer.appendChild(path);
@@ -389,19 +476,34 @@
   }
 
   function handlePortClick(compId, portName, pspec) {
+    const comp = getComp(compId);
     if (!state.wiring) {
       if (pspec.direction !== "out") {
         setStatus("neutral", "Start wiring from an output port (right side)");
         return;
       }
+      if (!isPortActive(comp, pspec)) {
+        setStatus("err", `${compId}.${portName} is inactive under current parameters`);
+        return;
+      }
+      if (pspec.max_connections != null && portConnectionCount(compId, portName, "out") >= pspec.max_connections) {
+        setStatus("err", `${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
+        return;
+      }
       state.wiring = { component: compId, port: portName, kind: pspec.kind };
-      els.wiringText.textContent = `Wiring ${compId}.${portName} (${pspec.kind}) -> click a ${pspec.kind} input port`;
+      const msgLabel = pspec.message_type ? ` (${pspec.message_type})` : ` (${pspec.kind})`;
+      els.wiringText.textContent = `Wiring ${compId}.${portName}${msgLabel} -> click a compatible input port`;
       els.wiringBanner.hidden = false;
       renderNodes();
       return;
     }
 
     if (pspec.direction === "in") {
+      const verdict = checkWireAllowed(state.wiring.component, state.wiring.port, compId, portName);
+      if (!verdict.ok) {
+        setStatus("err", verdict.reason);
+        return;
+      }
       const newConn = {
         from: { component: state.wiring.component, port: state.wiring.port },
         to: { component: compId, port: portName },
@@ -411,13 +513,23 @@
       state.selected = { type: "connection", index: state.doc.connections.length - 1 };
       state.wiring = null;
       els.wiringBanner.hidden = true;
+      setStatus("neutral", "Ready");
       renderAll();
       return;
     }
 
-    // Clicked another output port -> switch source
+    // Clicked another output port -> switch source if allowed
+    if (!isPortActive(comp, pspec)) {
+      setStatus("err", `${compId}.${portName} is inactive under current parameters`);
+      return;
+    }
+    if (pspec.max_connections != null && portConnectionCount(compId, portName, "out") >= pspec.max_connections) {
+      setStatus("err", `${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
+      return;
+    }
     state.wiring = { component: compId, port: portName, kind: pspec.kind };
-    els.wiringText.textContent = `Wiring ${compId}.${portName} (${pspec.kind}) -> click a ${pspec.kind} input port`;
+    const msgLabel = pspec.message_type ? ` (${pspec.message_type})` : ` (${pspec.kind})`;
+    els.wiringText.textContent = `Wiring ${compId}.${portName}${msgLabel} -> click a compatible input port`;
     renderNodes();
   }
 
@@ -530,6 +642,7 @@
           control.addEventListener("change", () => {
             comp.params[pname] = pspec.type === "integer" ? parseInt(control.value, 10) : Number(control.value);
             renderNodes();
+            renderEdges();
           });
         } else {
           control = document.createElement("input");

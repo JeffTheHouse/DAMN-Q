@@ -45,6 +45,33 @@ def _validate_param(comp_id, param_name, value, spec, errors):
         errors.append(f"Component {comp_id!r} parameter {param_name!r} must be <= {spec['max']}, got {value!r}.")
 
 
+def _resolved_params(spec, raw_params):
+    resolved = {}
+    for pname, pspec in spec.get("parameters", {}).items():
+        resolved[pname] = raw_params.get(pname, pspec["default"])
+    return resolved
+
+
+def _port_is_active(port_spec, params):
+    cond = port_spec.get("active_when")
+    if not cond:
+        return True
+    return all(params.get(k) == v for k, v in cond.items())
+
+
+def _classical_types_compatible(src_port_spec, dst_port_spec):
+    src_mt = src_port_spec.get("message_type")
+    dst_accepts = dst_port_spec.get("accepts")
+    dst_mt = dst_port_spec.get("message_type")
+    if src_mt is None:
+        return True
+    if dst_accepts is not None:
+        return src_mt in dst_accepts
+    if dst_mt is not None:
+        return src_mt == dst_mt
+    return True
+
+
 def validate_experiment(doc):
     """Validate an experiment dictionary. Raises ExperimentValidationError if invalid."""
     errors = []
@@ -90,20 +117,23 @@ def validate_experiment(doc):
             if spec is None:
                 errors.append(f"Component {cid!r} has unknown type {ctype!r}.")
                 continue
-            comp_map[cid] = (ctype, spec)
 
             params = comp.get("params", {})
             if not isinstance(params, dict):
                 errors.append(f"Component {cid!r} 'params' must be an object.")
+                comp_map[cid] = (ctype, spec, _resolved_params(spec, {}))
                 continue
             for pname, pval in params.items():
                 if pname not in spec["parameters"]:
                     errors.append(f"Component {cid!r} ({ctype}) has unknown parameter {pname!r}.")
                 else:
                     _validate_param(cid, pname, pval, spec["parameters"][pname], errors)
+            comp_map[cid] = (ctype, spec, _resolved_params(spec, params))
 
     connections = doc.get("connections", [])
-    quantum_outputs_used = set()
+    seen_edges = set()
+    out_counts = {}
+    in_counts = {}
     if not isinstance(connections, list):
         errors.append("'connections' must be a list.")
     else:
@@ -148,21 +178,67 @@ def validate_experiment(doc):
                 errors.append(f"connections[{idx}].from port {src_cid}.{src_port} is not an output port.")
             if dst_port_spec["direction"] != "in":
                 errors.append(f"connections[{idx}].to port {dst_cid}.{dst_port} is not an input port.")
+
+            if not _port_is_active(src_port_spec, src_info[2]):
+                errors.append(
+                    f"connections[{idx}].from port {src_cid}.{src_port} is inactive under the component's current parameters."
+                )
+            if not _port_is_active(dst_port_spec, dst_info[2]):
+                errors.append(
+                    f"connections[{idx}].to port {dst_cid}.{dst_port} is inactive under the component's current parameters."
+                )
+
+            edge_key = (src_cid, src_port, dst_cid, dst_port)
+            if edge_key in seen_edges:
+                errors.append(
+                    f"connections[{idx}] duplicates existing connection "
+                    f"{src_cid}.{src_port} -> {dst_cid}.{dst_port}."
+                )
+            else:
+                seen_edges.add(edge_key)
+
             if src_port_spec["kind"] != dst_port_spec["kind"]:
                 errors.append(
                     f"connections[{idx}] connects incompatible port types: "
                     f"{src_cid}.{src_port} ({src_port_spec['kind']}) -> "
                     f"{dst_cid}.{dst_port} ({dst_port_spec['kind']})."
                 )
-            elif src_port_spec["kind"] == "quantum" and src_port_spec["direction"] == "out":
-                key = (src_cid, src_port)
-                if key in quantum_outputs_used:
+            else:
+                if src_port_spec["kind"] == "classical" and not _classical_types_compatible(
+                    src_port_spec, dst_port_spec
+                ):
+                    src_mt = src_port_spec.get("message_type")
+                    dst_mt = dst_port_spec.get("accepts") or dst_port_spec.get("message_type")
                     errors.append(
-                        f"connections[{idx}] fans out quantum output port {src_cid}.{src_port}; "
-                        f"a quantum connection must transfer ownership to a single destination."
+                        f"connections[{idx}] connects incompatible classical message types: "
+                        f"{src_cid}.{src_port} ({src_mt}) -> {dst_cid}.{dst_port} (expects {dst_mt})."
                     )
-                else:
-                    quantum_outputs_used.add(key)
+
+                # Output fan-out limit
+                out_key = (src_cid, src_port)
+                out_counts[out_key] = out_counts.get(out_key, 0) + 1
+                out_max = src_port_spec.get("max_connections")
+                if out_max is not None and out_counts[out_key] > out_max:
+                    if src_port_spec["kind"] == "quantum":
+                        errors.append(
+                            f"connections[{idx}] fans out quantum output port {src_cid}.{src_port}; "
+                            f"a quantum connection must transfer ownership to a single destination."
+                        )
+                    else:
+                        errors.append(
+                            f"connections[{idx}] fans out classical output port {src_cid}.{src_port} "
+                            f"beyond max_connections={out_max}."
+                        )
+
+                # Input fan-in limit
+                in_key = (dst_cid, dst_port)
+                in_counts[in_key] = in_counts.get(in_key, 0) + 1
+                in_max = dst_port_spec.get("max_connections")
+                if in_max is not None and in_counts[in_key] > in_max:
+                    errors.append(
+                        f"connections[{idx}] fans in to {dst_port_spec['kind']} input port "
+                        f"{dst_cid}.{dst_port} beyond max_connections={in_max}."
+                    )
 
             delay = conn.get("delay", 0)
             loss_p = conn.get("loss_p", 0.0)

@@ -16,10 +16,10 @@ class Detector_module:
         self.id = id
         self.trace = bool(trace)
         self.sim = sim if sim is not None else scheduler
-        self.input_a_1 = Handler(self.result_a_1, sim=self.sim)
-        self.input_a_2 = Handler(self.result_a_2, sim=self.sim)
-        self.output_a_1 = Emitter(sim=self.sim)
-        self.output_a_2 = Emitter(sim=self.sim)
+        self.input_a_1 = Handler(self.result_a_1, sim=self.sim, kind="quantum", max_connections=1)
+        self.input_a_2 = Handler(self.result_a_2, sim=self.sim, kind="quantum", max_connections=1)
+        self.output_a_1 = Emitter(sim=self.sim, kind="quantum", max_connections=1)
+        self.output_a_2 = Emitter(sim=self.sim, kind="quantum", max_connections=1)
         self.list_a_1 = []
         self.list_a_2 = []
         self.ebits_1 = 0

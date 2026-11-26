@@ -19,11 +19,11 @@ class Pauli_corrector:
         self.id = id
         self.delay = delay
         self.sim = sim if sim is not None else scheduler
-        self.ch_in_q = Handler(self.handle_qubit, sim=self.sim)
-        self.ch_in_es = Handler(self.handle_es_c, sim=self.sim)
-        self.ch_in_memory = Handler(self.handle_memory, sim=self.sim)
-        self.ch_out_memory = Emitter(sim=self.sim)
-        self.ch_out_q = Emitter(sim=self.sim)
+        self.ch_in_q = Handler(self.handle_qubit, sim=self.sim, kind="quantum", max_connections=1)
+        self.ch_in_es = Handler(self.handle_es_c, sim=self.sim, kind="classical", max_connections=1)
+        self.ch_in_memory = Handler(self.handle_memory, sim=self.sim, kind="classical", max_connections=1)
+        self.ch_out_memory = Emitter(sim=self.sim, kind="classical", max_connections=1)
+        self.ch_out_q = Emitter(sim=self.sim, kind="quantum", max_connections=1)
         self.message = None
         self._ready_slots = deque()
         self._in_flight = 0
