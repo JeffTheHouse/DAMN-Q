@@ -1,6 +1,6 @@
 from Scheduler import *
 
-"""Scheduler is here!"""
+"""Process-wide default Simulation. Components use it unless given `sim=`."""
 scheduler = Scheduler()
 class Handler:
     def __init__(self, handler_func):

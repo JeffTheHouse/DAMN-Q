@@ -129,7 +129,10 @@ COMPONENT_MANIFEST = {
             "output_a_1": {"direction": "out", "kind": "quantum"},
             "output_a_2": {"direction": "out", "kind": "quantum"},
         },
-        "parameters": {},
+        "parameters": {
+            "trace": {"type": "integer", "enum": [0, 1], "default": 0,
+                      "description": "1 keeps arriving qubit references (unbounded); 0 keeps counters only"},
+        },
     },
     "endpoint_probe": {
         "label": "Quantum Endpoint Probe",

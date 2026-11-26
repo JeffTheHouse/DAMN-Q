@@ -4,6 +4,11 @@ from Operators import *
 from States import *
 
 
+def _draw(rng=None):
+    """Uniform draw from `rng` (e.g. a Simulation's stream), or the module RNG."""
+    return (rng if rng is not None else random).random()
+
+
 _BELL_STATES = (
     ("00", np.array([1.0, 0.0, 0.0, 1.0], dtype=complex) / np.sqrt(2.0)),   # |Phi+>
     ("01", np.array([0.0, 1.0, 1.0, 0.0], dtype=complex) / np.sqrt(2.0)),   # |Psi+>
@@ -149,7 +154,7 @@ class Register:
         else:
             self.density_matrix = np.array([[1.0]], dtype=complex)
 
-    def measure(self, qubit, basis="z"):
+    def measure(self, qubit, basis="z", rng=None):
         """Projectively measure `qubit` in `basis` ('z' or 'x').
 
         For multi-qubit registers, `qubit` is detached into its own 1-qubit
@@ -164,7 +169,7 @@ class Register:
         post0 = _apply_single_qubit_op(rho, n, idx, p0)
         prob_0 = float(np.clip(np.real(np.trace(post0)), 0.0, 1.0))
 
-        if random.random() < prob_0:
+        if _draw(rng) < prob_0:
             outcome = "0"
             proj, post_unnorm, prob = p0, post0, prob_0
         else:
@@ -212,7 +217,7 @@ class Register:
         return cls.join(q1._register, q2._register)
 
     @classmethod
-    def bell_measure(cls, q1, q2):
+    def bell_measure(cls, q1, q2, rng=None):
         """Perform a Bell-basis measurement on `q1` and `q2`.
 
         Returns `(outcome, remaining_register)` where `outcome` is one of:
@@ -244,7 +249,7 @@ class Register:
             probs.append(p)
 
         total = sum(probs)
-        r = random.random() * total
+        r = _draw(rng) * total
         cumulative = 0.0
         chosen = candidates[-1]
         for cand in candidates:
@@ -354,8 +359,8 @@ class Qubit:
         if self._register is not None:
             self._register.apply_unitary(self, unitary)
 
-    def loss(self, loss_p):
-        if random.random() < loss_p:
+    def loss(self, loss_p, rng=None):
+        if _draw(rng) < loss_p:
             if self._register is not None:
                 self._register.trace_out(self)
             self._register = None

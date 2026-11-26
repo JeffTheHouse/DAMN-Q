@@ -1,5 +1,4 @@
 import json
-import random
 import subprocess
 import sys
 from pathlib import Path
@@ -70,9 +69,9 @@ def test_cli_reproduces_python_wired_tutorial_repeater_with_seed():
     until = 100
 
     # Run Python-wired repeater directly
+    # The default instance owns its own seeded stream; the global random module is untouched
+    scheduler.seed = seed
     scheduler.reset()
-    rng_state = random.getstate()
-    random.seed(seed)
     try:
         source_a = Source(1, 1, 2)
         source_b = Source(2, 1, 2)
@@ -121,7 +120,8 @@ def test_cli_reproduces_python_wired_tutorial_repeater_with_seed():
             "11": reader.count_11,
         }
     finally:
-        random.setstate(rng_state)
+        scheduler.seed = None
+        scheduler.reset()
 
     # Run JSON project via CLI in a fresh subprocess
     proc = subprocess.run(

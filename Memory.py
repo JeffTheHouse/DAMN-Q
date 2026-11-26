@@ -3,6 +3,7 @@ from collections import deque
 from Qubits import *
 from Emitter import *
 from Id_generator import *
+from Signals import Ready, Release
 
 
 def _composed_depolarization_p(p, ticks):
@@ -18,7 +19,6 @@ def _composed_depolarization_p(p, ticks):
     n = int(round(ticks))
     return 0.75 * (1.0 - (1.0 - 4.0 * p / 3.0) ** n)
 
-
 class Direction:
     def __init__(self, flow):
         self.flow = flow
@@ -27,11 +27,20 @@ class Direction:
 
 
 class Quantum_memory:
-    def __init__(self, id, depolarization_p, delay=0, capacity=100, fifo=1):
+    """Slot-based quantum memory.
+
+    Readiness is announced as `Ready(slot_id)` on `ch_out_c`. Controllers may
+    answer with `Release(slot_id)` to take exactly that slot, or with a bare
+    message to take the oldest (fifo=1) or newest (fifo=0) confirmed slot.
+    A release for an evicted or already-released slot is a no-op.
+    """
+
+    def __init__(self, id, depolarization_p, delay=0, capacity=100, fifo=1, sim=None):
         self.id = id
         self.delay = delay
         self.depolarization_p = depolarization_p
         self.fifo = fifo
+        self.sim = sim if sim is not None else scheduler
         self.ch_in_q = Handler(self.handle_receive)
         self.ch_in_c = Handler(self.handle_classic)
         self.ch_in_paired_memory = Handler(self.handle_paired_memory)
@@ -77,6 +86,18 @@ class Quantum_memory:
             _, evicted_qubit = self.temperory_memory.pop(oldest_pending)
             evicted_qubit.state = None
             self._pending_order[oldest_pending_idx] = None
+        self._trim_orders()
+
+    def _trim_orders(self):
+        """Drop tombstones at both ends so the order deques stay bounded."""
+        while self._confirmed_order and (
+            self._confirmed_order[0] is None or self._confirmed_order[0] not in self.memory
+        ):
+            self._confirmed_order.popleft()
+        while self._confirmed_order and (
+            self._confirmed_order[-1] is None or self._confirmed_order[-1] not in self.memory
+        ):
+            self._confirmed_order.pop()
 
     def handle_paired_memory(self, message):
         if not self._pending_order:
@@ -90,7 +111,7 @@ class Quantum_memory:
         if message == 1:
             self.memory[slot_id] = (arrival_time, qubit)
             self._confirmed_order.append(slot_id)
-            scheduler.add(0, lambda: self.ch_out_c.emit(1))
+            self.sim.add(0, lambda s=slot_id: self.ch_out_c.emit(Ready(s)))
         else:
             qubit.state = None
 
@@ -99,37 +120,47 @@ class Quantum_memory:
             if self.occupied_slots >= self.capacity:
                 self._evict_oldest()
             slot_id = self.memory_address_generator.generate()
-            self.temperory_memory[slot_id] = (scheduler._time, qubit)
+            self.temperory_memory[slot_id] = (self.sim.time, qubit)
             self._pending_order.append(slot_id)
-            scheduler.add(1, lambda: self.ch_out_paired_memory.emit(1))
+            self.sim.add(1, lambda: self.ch_out_paired_memory.emit(1))
             """There needs to be at least delay = 1! The message can not arrive eralier than the qubits"""
         else:
             self._pending_order.append(None)
-            scheduler.add(1, lambda: self.ch_out_paired_memory.emit(0))
+            self.sim.add(1, lambda: self.ch_out_paired_memory.emit(0))
+
+    def _find_confirmed_index(self, request):
+        """Index into `_confirmed_order` of the slot this request targets, or None."""
+        if isinstance(request, Release):
+            for idx, sid in enumerate(self._confirmed_order):
+                if sid == request.slot_id and sid in self.memory:
+                    return idx
+            return None
+        # Untagged legacy request: oldest (FIFO) or newest (LIFO) live slot
+        indices = range(len(self._confirmed_order))
+        if self.fifo != 1:
+            indices = reversed(indices)
+        for idx in indices:
+            sid = self._confirmed_order[idx]
+            if sid is not None and sid in self.memory:
+                return idx
+        return None
 
     def handle_classic(self, request):
-        if not self._confirmed_order:
-            return
-        slot_id = self._confirmed_order[0] if self.fifo == 1 else self._confirmed_order[-1]
-        if slot_id is None or slot_id not in self.memory:
-            # Stale release request for an already-evicted confirmed slot
-            if self.fifo == 1:
-                self._confirmed_order.popleft()
-            else:
-                self._confirmed_order.pop()
+        idx = self._find_confirmed_index(request)
+        if idx is None:
+            # Evicted, already released, or nothing confirmed: never reassign a slot
             return
 
+        slot_id = self._confirmed_order[idx]
         arrival_time, emitted_qubit = self.memory[slot_id]
-        passed_time = scheduler._time - arrival_time
+        passed_time = self.sim.time - arrival_time
         # Validate duration before mutating memory occupancy
         p_eff = _composed_depolarization_p(self.depolarization_p, passed_time)
 
-        if self.fifo == 1:
-            self._confirmed_order.popleft()
-        else:
-            self._confirmed_order.pop()
+        self._confirmed_order[idx] = None
         self.memory.pop(slot_id)
+        self._trim_orders()
 
         if p_eff != 0.0 and emitted_qubit.state is not None:
             emitted_qubit.depolarize(p_eff)
-        scheduler.add(self.delay, lambda q=emitted_qubit: self.ch_out_q.emit(q))
+        self.sim.add(self.delay, lambda q=emitted_qubit: self.ch_out_q.emit(q))

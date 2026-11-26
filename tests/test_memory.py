@@ -11,6 +11,8 @@ from Memory import Quantum_memory
 from Orchestrator import Orchestrator
 from Pauli_corrector import Pauli_corrector
 from Qubits import Qubit, State
+from Signals import Ready, Release
+from Simulation import Simulation
 from Source import Source
 from States import phi_plus
 
@@ -147,25 +149,32 @@ def test_stale_release_after_eviction_does_not_consume_next_qubit():
     q_a = Qubit(1, State(KET0.copy()))
     q_b = Qubit(2, State(KET1.copy()))
 
+    ready = []
+    bind(mem.ch_out_c, Handler(lambda m: ready.append(m)))
+
     # Confirm A
     mem.ch_in_q.handle(q_a)
     mem.ch_in_paired_memory.handle(1)
+    scheduler.run(0)
     assert len(mem.memory) == 1
+    slot_a = ready[0].slot_id
 
     # Arrive and confirm B -> evicts A
     mem.ch_in_q.handle(q_b)
     assert q_a.state is None
     mem.ch_in_paired_memory.handle(1)
+    scheduler.run(0)
     assert len(mem.memory) == 1
+    slot_b = ready[1].slot_id
 
-    # First release request is A's stale notification -> must NOT release B
-    mem.ch_in_c.handle(1)
+    # Tagged release for evicted A must NOT consume B
+    mem.ch_in_c.handle(Release(slot_a))
     scheduler.run(1)
     assert released == []
     assert len(mem.memory) == 1
 
-    # Second release request is B's own notification -> releases B
-    mem.ch_in_c.handle(1)
+    # Tagged release for B's own slot releases B
+    mem.ch_in_c.handle(Release(slot_b))
     scheduler.run(2)
     assert released == [q_b]
     assert len(mem.memory) == 0
@@ -332,3 +341,85 @@ def test_wired_repeater_with_memory_noise_matches_analytic_fidelity():
     expected_f = (1.0 + 3.0 * prod) / 4.0
 
     assert np.isclose(fidelity, expected_f, atol=1e-12)
+
+
+def test_lifo_evicted_slot_release_cannot_consume_other_qubits():
+    mem = Quantum_memory(1, depolarization_p=0, delay=0, capacity=2, fifo=0)
+    released = []
+    ready = []
+    bind(mem.ch_out_q, Handler(lambda q: released.append(q)))
+    bind(mem.ch_out_c, Handler(lambda m: ready.append(m)))
+
+    qa = Qubit(1, State(KET0.copy()))
+    qb = Qubit(2, State(KET1.copy()))
+    qc = Qubit(3, State(KET0.copy()))
+
+    for q in (qa, qb):
+        mem.ch_in_q.handle(q)
+        mem.ch_in_paired_memory.handle(1)
+        scheduler.run(0)
+    slot_a, slot_b = ready[0].slot_id, ready[1].slot_id
+
+    # Arrival of C evicts the oldest confirmed slot (A)
+    mem.ch_in_q.handle(qc)
+    mem.ch_in_paired_memory.handle(1)
+    scheduler.run(0)
+    assert qa.state is None
+    assert len(mem.memory) == 2
+
+    # A tagged release for the evicted A must not consume B or C
+    mem.ch_in_c.handle(Release(slot_a))
+    scheduler.run(1)
+    assert released == []
+    assert len(mem.memory) == 2
+
+    # Untagged LIFO request takes the newest live slot (C)
+    mem.ch_in_c.handle(1)
+    scheduler.run(2)
+    assert released == [qc]
+
+    # B is still reachable by its own slot ID
+    mem.ch_in_c.handle(Release(slot_b))
+    scheduler.run(3)
+    assert released == [qc, qb]
+    assert len(mem.memory) == 0
+
+
+def test_tagged_release_is_single_use():
+    mem = Quantum_memory(1, depolarization_p=0, delay=0, capacity=4)
+    released = []
+    ready = []
+    bind(mem.ch_out_q, Handler(lambda q: released.append(q)))
+    bind(mem.ch_out_c, Handler(lambda m: ready.append(m)))
+
+    q = Qubit(1, State(KET0.copy()))
+    mem.ch_in_q.handle(q)
+    mem.ch_in_paired_memory.handle(1)
+    scheduler.run(0)
+    slot = ready[0].slot_id
+
+    mem.ch_in_c.handle(Release(slot))
+    mem.ch_in_c.handle(Release(slot))
+    scheduler.run(1)
+    assert released == [q]
+
+
+def test_orchestrator_releases_exactly_the_announced_slots():
+    sim = Simulation()
+    orch = Orchestrator(1, 0, sim=sim)
+    out_1 = []
+    out_2 = []
+    bind(orch.ch_out_memory_1, Handler(lambda m: out_1.append(m)))
+    bind(orch.ch_out_memory_2, Handler(lambda m: out_2.append(m)))
+
+    orch.ch_in_memory_1.handle(Ready(5))
+    orch.ch_in_memory_1.handle(Ready(6))
+    orch.ch_in_memory_2.handle(Ready(9))
+    sim.run(0)
+    assert out_1 == [Release(5)]
+    assert out_2 == [Release(9)]
+
+    orch.ch_in_memory_2.handle(Ready(10))
+    sim.run(0)
+    assert out_1 == [Release(5), Release(6)]
+    assert out_2 == [Release(9), Release(10)]

@@ -2,19 +2,20 @@ from Qubits import*
 from Emitter import*
 from Id_generator import*
 class Source:
-    def __init__(self, id, delay, type):
+    def __init__(self, id, delay, type, sim=None):
         self.id = id
         if delay <= 0:
             raise ValueError("Source needs a delay bigger than zero!")
         else:
             self.delay = delay
         self.type = type
+        self.sim = sim if sim is not None else scheduler
         self.id_generator = Id_generator()
         self.out_ch_1 = Emitter()
         self.out_ch_2 = Emitter()
 
-        scheduler.add(self.delay, lambda:self.prepare())
-    
+        self.sim.add(self.delay, lambda:self.prepare())
+
     def prepare(self):
         if self.type == 1:
             qubit = Qubit(self.id_generator.generate(), State(np.array([[1 , 0],[0 , 0]])))
@@ -24,11 +25,10 @@ class Source:
                                                                                                                              [0,0,0,0],
                                                                                                                              [0,0,0,0],
                                                                                                                              [.5,0,0,.5]])))
-            
+
             self.out_ch_1.emit(qubit_1)
             self.out_ch_2.emit(qubit_2)
         else:
             print(f"error")
 
-        scheduler.add(self.delay, lambda:self.prepare())
-
+        self.sim.add(self.delay, lambda:self.prepare())
