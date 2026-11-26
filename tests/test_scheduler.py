@@ -84,3 +84,17 @@ def test_negative_delay_raises():
     s = Scheduler()
     with pytest.raises(ValueError):
         s.add(-1, lambda: None)
+
+
+def test_cancel_rejects_foreign_handle():
+    s1 = Scheduler()
+    s2 = Scheduler()
+    fired = []
+    handle_a = s1.add(2, lambda: fired.append("a"))
+
+    with pytest.raises(ValueError):
+        s2.cancel(handle_a)
+
+    assert not handle_a.cancelled
+    s1.run(5)
+    assert fired == ["a"]

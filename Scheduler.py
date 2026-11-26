@@ -5,10 +5,11 @@ import itertools
 class EventHandle:
     """Handle returned by Scheduler.add() allowing event cancellation."""
 
-    def __init__(self, time, seq, callback):
+    def __init__(self, time, seq, callback, scheduler=None):
         self.time = time
         self.seq = seq
         self.callback = callback
+        self._scheduler = scheduler
         self._cancelled = False
 
     @property
@@ -34,11 +35,13 @@ class Scheduler:
             raise ValueError("Event delay must be non-negative.")
         event_time = self._time + delay
         seq = next(self._counter)
-        handle = EventHandle(event_time, seq, callback)
+        handle = EventHandle(event_time, seq, callback, scheduler=self)
         heapq.heappush(self._queue, (event_time, seq, handle))
         return handle
 
     def cancel(self, handle):
+        if getattr(handle, "_scheduler", None) is not self:
+            raise ValueError("EventHandle does not belong to this Scheduler.")
         handle.cancel()
 
     def _discard_cancelled(self):
