@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DAMN-Q Workbench</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-title">DAMN-Q</span>
+      <span class="brand-badge" id="version-badge">v—</span>
+    </div>
+
+    <div class="toolbar-group">
+      <label class="toolbar-label" for="example-select">Project</label>
+      <select id="example-select" aria-label="Built-in experiments"></select>
+      <button id="btn-load-example" class="btn" type="button">Load</button>
+      <button id="btn-import" class="btn" type="button">Import JSON</button>
+      <input id="file-import" type="file" accept=".json,application/json" hidden />
+      <button id="btn-export" class="btn" type="button">Export JSON</button>
+    </div>
+
+    <div class="toolbar-group">
+      <label class="toolbar-label" for="run-until">Until</label>
+      <input id="run-until" class="input-sm" type="number" min="1" step="any" value="150" />
+      <label class="toolbar-label" for="run-seed">Seed</label>
+      <input id="run-seed" class="input-sm" type="number" step="1" placeholder="auto" />
+    </div>
+
+    <div class="toolbar-group toolbar-actions">
+      <button id="btn-fit" class="btn" type="button" title="Fit graph to view">Fit</button>
+      <button id="btn-validate" class="btn" type="button">Validate</button>
+      <button id="btn-run" class="btn btn-primary" type="button">Run</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="palette" aria-label="Component palette">
+      <div class="panel-header">
+        <h2>Components</h2>
+        <span class="hint">Click or drag to canvas</span>
+      </div>
+      <div id="palette-list" class="palette-list"></div>
+      <div class="legend">
+        <div class="legend-item"><span class="port-dot quantum"></span> Quantum port</div>
+        <div class="legend-item"><span class="port-dot classical"></span> Classical port</div>
+      </div>
+    </aside>
+
+    <section class="canvas-pane" aria-label="Experiment graph canvas">
+      <div id="wiring-banner" class="wiring-banner" hidden>
+        <span id="wiring-text">Select a compatible input port…</span>
+        <button id="btn-cancel-wire" class="btn btn-xs" type="button">Cancel (Esc)</button>
+      </div>
+      <div id="canvas-viewport" class="canvas-viewport">
+        <div id="canvas-world" class="canvas-world">
+          <svg id="edge-layer" class="edge-layer"></svg>
+          <div id="node-layer" class="node-layer"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right-pane" aria-label="Inspector and simulation results">
+      <section class="inspector-section">
+        <div class="panel-header">
+          <h2 id="inspector-title">Experiment</h2>
+          <button id="btn-select-exp" class="btn btn-xs" type="button" hidden>Experiment</button>
+        </div>
+        <div id="inspector-body" class="panel-body"></div>
+      </section>
+
+      <section class="results-section">
+        <div class="panel-header">
+          <h2>Results</h2>
+          <span id="status-pill" class="status-pill neutral">Ready</span>
+        </div>
+        <div id="results-body" class="panel-body">
+          <p class="muted">Click <strong>Validate</strong> or <strong>Run</strong> to execute this experiment through the DAMN-Q simulator.</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

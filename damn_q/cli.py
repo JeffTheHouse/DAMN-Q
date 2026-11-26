@@ -7,6 +7,7 @@ import sys
 from damn_q.manifest import COMPONENT_MANIFEST, MANIFEST_VERSION
 from damn_q.runner import SIMULATOR_VERSION, load_experiment, run_experiment
 from damn_q.schema import ExperimentValidationError, SCHEMA_VERSION, validate_experiment
+from damn_q.server import serve_workbench
 
 
 def build_parser():
@@ -26,6 +27,11 @@ def build_parser():
     p_run.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable JSON output.")
 
     sub.add_parser("manifest", help="Print the component manifest as JSON.")
+
+    p_serve = sub.add_parser("serve", help="Launch the local browser workbench.")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1).")
+    p_serve.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000).")
+    p_serve.add_argument("--no-browser", action="store_true", help="Do not open a browser window automatically.")
     return parser
 
 
@@ -85,6 +91,10 @@ def main(argv=None):
                         f"pairs={m['pairs']}, shared_register={m['all_shared_register']}, "
                         f"mean_fidelity={m['mean_fidelity']}"
                     )
+        return 0
+
+    if args.command == "serve":
+        serve_workbench(host=args.host, port=args.port, open_browser=not args.no_browser)
         return 0
 
     return 2
