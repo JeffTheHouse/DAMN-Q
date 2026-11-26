@@ -2,16 +2,22 @@ from pathlib import Path
 
 import numpy as np
 
+from Auto_connector import connect
 from Classic_data_reader import Classic_data_reader
 from Emitter import Handler, bind
 from Entanglment_swapping_module import Entaglment_swapping_module
+from Measurer_memory_paired import Measurer_memory_paired
+from Memory import Quantum_memory
 from Pauli_corrector import Pauli_corrector
 from Qubits import Qubit, State
-from Signals import BellOutcome, MeasurementResult
+from Signals import BellOutcome, MeasurementResult, PeerHerald, ReadoutRejected
 from Simulation import Simulation
 from States import phi_plus
 from damn_q import run_experiment
 from damn_q.runner import EndpointProbe, _BellFidelityRecorder
+
+KET0 = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=complex)
+KET1 = np.array([[0.0, 0.0], [0.0, 1.0]], dtype=complex)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -167,3 +173,103 @@ def test_repeater_reports_separate_attempts_heralds_swaps_and_delivery_latency()
     assert metrics["memories"]["memory_a_1"]["evicted"] == 0
     assert metrics["swappers"]["es"]["completed"] == 1
     assert metrics["swappers"]["es"]["rejected"] == 0
+
+
+def test_stale_readout_does_not_stall_pauli_corrector():
+    sim = Simulation()
+    mem = Quantum_memory("mem_b", depolarization_p=0.0, delay=0, capacity=1, sim=sim)
+    pc = Pauli_corrector("pc", delay=0, sim=sim)
+
+    connect(mem.ch_out_c, pc.ch_in_memory, delay=0, sim=sim)
+    connect(pc.ch_out_memory, mem.ch_in_c, delay=0, sim=sim)
+    connect(mem.ch_out_q, pc.ch_in_q, delay=0, sim=sim)
+
+    corrected = []
+    bind(pc.ch_out_q, Handler(lambda q: corrected.append(q)))
+
+    # Confirm A (slot 0), then arrive & confirm B (evicts A, confirms slot 1)
+    qa = Qubit(1, State(KET0.copy()), pair_id=1)
+    qb = Qubit(2, State(KET0.copy()), pair_id=2)
+    mem.ch_in_q.handle(qa)
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=1))
+    sim.run(1)
+
+    mem.ch_in_q.handle(qb)
+    assert qa.state is None  # A evicted
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=2))
+    sim.run(2)
+
+    # Bell outcome for B ("01" -> X) arrives; corrector first requests evicted slot 0,
+    # receives ReadoutRejected(0), and immediately requests live slot 1 without stalling.
+    pc.ch_in_es.handle(BellOutcome("01", swap_id=2))
+    sim.run(5)
+
+    assert len(corrected) == 1
+    assert corrected[0] is qb
+    assert np.allclose(corrected[0].state.density_matrix, KET1)
+    assert pc._in_flight == 0
+
+
+def test_stale_readout_does_not_stall_measurer_memory_paired():
+    sim = Simulation()
+    mem = Quantum_memory("mem_a", depolarization_p=0.0, delay=0, capacity=1, sim=sim)
+    m_a = Measurer_memory_paired("m_a", delay=0, x_basis_p=0.0, sim=sim)
+
+    connect(mem.ch_out_c, m_a.ch_in_memory_c, delay=0, sim=sim)
+    connect(m_a.ch_out_memory_c, mem.ch_in_c, delay=0, sim=sim)
+    connect(mem.ch_out_q, m_a.ch_in_q, delay=0, sim=sim)
+
+    results = []
+    bind(m_a.ch_out_result, Handler(lambda r: results.append(r)))
+
+    qa = Qubit(1, State(KET0.copy()), pair_id=1)
+    qb = Qubit(2, State(KET1.copy()), pair_id=2)
+    mem.ch_in_q.handle(qa)
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=1))
+    sim.run(1)
+
+    mem.ch_in_q.handle(qb)
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=2))
+    sim.run(2)
+
+    m_a.ch_in_es.handle(BellOutcome("00", swap_id=2))
+    sim.run(5)
+
+    assert results == ["1"]
+    assert results[0].pair_id == 2
+
+
+def test_peer_heralds_match_by_pair_id_when_out_of_order():
+    sim = Simulation()
+    mem = Quantum_memory("mem_a", depolarization_p=0.0, delay=0, capacity=4, sim=sim)
+
+    ready = []
+    bind(mem.ch_out_c, Handler(lambda m: ready.append(m)))
+
+    qa = Qubit(1, State(KET0.copy()), pair_id=101)
+    qb = Qubit(2, State(KET1.copy()), pair_id=102)
+
+    mem.ch_in_q.handle(qa)
+    mem.ch_in_q.handle(qb)
+    assert len(mem.temperory_memory) == 2
+
+    # Deliver B's success herald BEFORE A's failure herald
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=102))
+    mem.ch_in_paired_memory.handle(PeerHerald(0, pair_id=101))
+    sim.run(1)
+
+    # B must be confirmed and A must be discarded
+    assert qa.state is None
+    assert qb.state is not None
+    assert len(mem.memory) == 1
+    confirmed_qubit = next(iter(mem.memory.values()))[1]
+    assert confirmed_qubit is qb
+    assert len(ready) == 1
+
+    # Also verify early herald arriving BEFORE the qubit resolves cleanly on arrival
+    qc = Qubit(3, State(KET1.copy()), pair_id=103)
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=103))
+    mem.ch_in_q.handle(qc)
+    sim.run(2)
+    assert len(mem.memory) == 2
+    assert len(ready) == 2

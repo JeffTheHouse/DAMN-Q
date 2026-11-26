@@ -3,7 +3,7 @@ from collections import deque
 from Qubits import *
 from Emitter import *
 from Id_generator import *
-from Signals import Ready, Release
+from Signals import PeerHerald, ReadoutRejected, Ready, Release
 
 
 def _composed_depolarization_p(p, ticks):
@@ -30,12 +30,13 @@ class Direction:
 class Quantum_memory:
     """Slot-based quantum memory.
 
-    Readiness is announced as `Ready(slot_id)` on `ch_out_c`. Controllers may
-    answer with `Release(slot_id)` to take exactly that slot, or with a bare
-    message to take the oldest (fifo=1) or newest (fifo=0) confirmed slot.
-    Evicted slots remain as tombstones in `_confirmed_order` until their
-    corresponding release arrives, so stale requests (tagged or legacy FIFO)
-    never consume a different qubit.
+    - Peer heralds carry `PeerHerald(ok, pair_id)` so out-of-order heralds are
+      matched by `pair_id` (bare `0`/`1` retains legacy FIFO matching).
+    - Readiness is announced as `Ready(slot_id, memory_id)` on `ch_out_c`.
+    - Controllers reply with `Release(slot_id, memory_id)` (or legacy bare `1`).
+      If a tagged `Release` targets an evicted or already-released slot on this
+      memory, `ReadoutRejected(slot_id, memory_id)` is emitted on `ch_out_c` so
+      controllers do not stall waiting for a qubit that will never arrive.
     """
 
     def __init__(self, id, depolarization_p, delay=0, capacity=100, fifo=1, sim=None):
@@ -58,6 +59,8 @@ class Quantum_memory:
         self.heralded_count = 0
         self.evicted_count = 0
         self._pending_order = deque()
+        self._pending_by_pair = {}
+        self._early_heralds = {}
         self._confirmed_order = deque()
 
     @property
@@ -83,26 +86,31 @@ class Quantum_memory:
             oldest_pending is None or oldest_confirmed < oldest_pending
         ):
             # Leave `oldest_confirmed` in `_confirmed_order` as a tombstone
-            # (absent from `self.memory`) so stale release requests are no-ops.
+            # (absent from `self.memory`) so stale release requests are rejected.
             _, evicted_qubit = self.memory.pop(oldest_confirmed)
             evicted_qubit.state = None
             self.evicted_count += 1
         elif oldest_pending is not None:
             _, evicted_qubit = self.temperory_memory.pop(oldest_pending)
+            pid = getattr(evicted_qubit, "pair_id", None)
+            if pid is not None and self._pending_by_pair.get(pid) == oldest_pending:
+                self._pending_by_pair[pid] = None
             evicted_qubit.state = None
             self._pending_order[oldest_pending_idx] = None
             self.evicted_count += 1
 
-    def handle_paired_memory(self, message):
-        if not self._pending_order:
-            return
-        slot_id = self._pending_order.popleft()
+    def _remove_pending_slot(self, slot_id):
+        try:
+            self._pending_order.remove(slot_id)
+        except ValueError:
+            pass
+
+    def _resolve_herald(self, slot_id, ok):
         if slot_id is None or slot_id not in self.temperory_memory:
             # Attempt was lost on arrival or already evicted before herald arrived
             return
-
         arrival_time, qubit = self.temperory_memory.pop(slot_id)
-        if message == 1:
+        if ok:
             self.memory[slot_id] = (arrival_time, qubit)
             self._confirmed_order.append(slot_id)
             self.heralded_count += 1
@@ -110,18 +118,59 @@ class Quantum_memory:
         else:
             qubit.state = None
 
+    def handle_paired_memory(self, message):
+        pid = getattr(message, "pair_id", None)
+        ok = (message == 1)
+
+        if pid is not None:
+            if pid not in self._pending_by_pair:
+                # Peer herald arrived before our qubit; buffer by pair_id
+                self._early_heralds[pid] = ok
+                return
+            slot_id = self._pending_by_pair.pop(pid)
+            if slot_id is not None:
+                self._remove_pending_slot(slot_id)
+            self._resolve_herald(slot_id, ok)
+            return
+
+        # Legacy untagged bare 0/1 herald: match by arrival order
+        if not self._pending_order:
+            return
+        slot_id = self._pending_order.popleft()
+        if slot_id is not None and slot_id in self.temperory_memory:
+            _, q = self.temperory_memory[slot_id]
+            q_pid = getattr(q, "pair_id", None)
+            if q_pid is not None and self._pending_by_pair.get(q_pid) == slot_id:
+                self._pending_by_pair.pop(q_pid, None)
+        self._resolve_herald(slot_id, ok)
+
     def handle_receive(self, qubit):
+        pid = getattr(qubit, "pair_id", None)
         if qubit.state is not None:
             if self.occupied_slots >= self.capacity:
                 self._evict_oldest()
             slot_id = self.memory_address_generator.generate()
             self.temperory_memory[slot_id] = (self.sim.time, qubit)
             self._pending_order.append(slot_id)
-            self.sim.add(1, lambda: self.ch_out_paired_memory.emit(1))
+            if pid is not None:
+                self._pending_by_pair[pid] = slot_id
+            herald = PeerHerald(1, pair_id=pid)
+            self.sim.add(1, lambda h=herald: self.ch_out_paired_memory.emit(h))
             """There needs to be at least delay = 1! The message can not arrive eralier than the qubits"""
+            if pid is not None and pid in self._early_heralds:
+                early_ok = self._early_heralds.pop(pid)
+                self._pending_by_pair.pop(pid, None)
+                self._remove_pending_slot(slot_id)
+                self._resolve_herald(slot_id, early_ok)
         else:
             self._pending_order.append(None)
-            self.sim.add(1, lambda: self.ch_out_paired_memory.emit(0))
+            if pid is not None:
+                if pid in self._early_heralds:
+                    self._early_heralds.pop(pid)
+                else:
+                    self._pending_by_pair[pid] = None
+            herald = PeerHerald(0, pair_id=pid)
+            self.sim.add(1, lambda h=herald: self.ch_out_paired_memory.emit(h))
 
     def _remove_confirmed_slot(self, slot_id):
         try:
@@ -136,8 +185,14 @@ class Quantum_memory:
                 return
             slot_id = request.slot_id
             if slot_id not in self.memory:
-                # Evicted or already released: consume tombstone if present and return
+                # Evicted or already released: consume tombstone and notify controller
                 self._remove_confirmed_slot(slot_id)
+                self.sim.add(
+                    0,
+                    lambda s=slot_id: self.ch_out_c.emit(
+                        ReadoutRejected(s, memory_id=self.id)
+                    ),
+                )
                 return
 
             arrival_time, emitted_qubit = self.memory[slot_id]

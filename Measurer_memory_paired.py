@@ -3,7 +3,7 @@ from collections import deque
 from Emitter import*
 from Measurment_module import*
 from Id_generator import*
-from Signals import MeasurementResult, enqueue_ready, release_request
+from Signals import MeasurementResult, ReadoutRejected, enqueue_ready, release_request
 import numpy as np
 import random
 
@@ -17,7 +17,9 @@ class Measurer_memory_paired:
     """Measures memory qubits; each ES message claims one ready memory slot.
 
     ES messages wait until a readiness-announced slot exists, so the release
-    is always tagged with that slot. Nothing is dropped.
+    is always tagged with that slot. If the memory reports `ReadoutRejected`
+    for an evicted slot, the pending ES trigger is retried on the next ready
+    slot instead of being lost.
     """
 
     def __init__(self, id, delay, x_basis_p = 0, p_depolarization = 0, sim=None):
@@ -34,6 +36,7 @@ class Measurer_memory_paired:
         self.id_generator_measurement = Id_generator()
         self._ready_slots = deque()
         self._pending_es = deque()
+        self._in_flight_es = {}
         self.es_message = None
 
     @property
@@ -41,6 +44,12 @@ class Measurer_memory_paired:
         return len(self._ready_slots)
 
     def handle_memory_c(self, message):
+        if isinstance(message, ReadoutRejected):
+            retried = self._in_flight_es.pop(message.slot_id, None)
+            if retried is not None:
+                self._pending_es.appendleft(retried)
+            self._dispatch()
+            return
         enqueue_ready(self._ready_slots, message)
         self._dispatch()
 
@@ -50,11 +59,20 @@ class Measurer_memory_paired:
 
     def _dispatch(self):
         while self._ready_slots and self._pending_es:
-            self.es_message = self._pending_es.popleft()
-            request = release_request(self._ready_slots.popleft())
+            es_msg = self._pending_es.popleft()
+            self.es_message = es_msg
+            entry = self._ready_slots.popleft()
+            request = release_request(entry)
+            slot_id = entry[0] if isinstance(entry, tuple) else entry
+            if slot_id is not None:
+                self._in_flight_es[slot_id] = es_msg
             self.sim.add(0, lambda r=request: self.ch_out_memory_c.emit(r))
 
     def handle_qubit(self, qubit):
+        if self._in_flight_es:
+            # Clear oldest in-flight entry once a readout succeeds
+            first_key = next(iter(self._in_flight_es))
+            self._in_flight_es.pop(first_key, None)
         measurment_id = self.id_generator_measurement.generate()
         result = measure(measurment_id, qubit, self.x_basis_p, rng=self.sim.rng)
         out = MeasurementResult(

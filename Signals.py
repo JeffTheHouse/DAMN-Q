@@ -2,6 +2,10 @@
 
 - `Ready(slot_id, memory_id)`: memory announces a confirmed slot.
 - `Release(slot_id, memory_id)`: controller requests readout of that exact slot.
+- `ReadoutRejected(slot_id, memory_id)`: memory notifies controllers that a
+  tagged `Release` failed because the slot was evicted or already released.
+- `PeerHerald(ok, pair_id)`: `int` subclass (`1` = arrived, `0` = lost)
+  carrying `pair_id` so peer memories match heralds by attempt/pair ID.
 - `BellOutcome(bits, swap_id)`: `str` subclass (`"00"`..`"11"`) carrying swap ID.
 - `MeasurementResult(bit, pair_id, basis, measurement_id)`: `str` subclass
   (`"0"` or `"1"`) carrying pair identity and measurement basis.
@@ -21,6 +25,21 @@ class Ready:
 class Release:
     slot_id: int
     memory_id: Optional[Any] = None
+
+
+@dataclass(frozen=True)
+class ReadoutRejected:
+    slot_id: int
+    memory_id: Optional[Any] = None
+
+
+class PeerHerald(int):
+    """Paired-memory herald (`1` = arrived, `0` = lost) carrying `pair_id`."""
+
+    def __new__(cls, ok, pair_id=None):
+        obj = super().__new__(cls, 1 if ok else 0)
+        obj.pair_id = pair_id
+        return obj
 
 
 class BellOutcome(str):
@@ -44,7 +63,12 @@ class MeasurementResult(str):
 
 
 def enqueue_ready(queue, message):
-    """Queue `(slot_id, memory_id)` pairs from Ready or legacy int count."""
+    """Queue `(slot_id, memory_id)` pairs from Ready or legacy int count.
+
+    Ignores `ReadoutRejected` notifications (handled separately by controllers).
+    """
+    if isinstance(message, ReadoutRejected):
+        return
     if isinstance(message, Ready):
         queue.append((message.slot_id, message.memory_id))
     else:

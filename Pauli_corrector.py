@@ -4,7 +4,7 @@ from Emitter import *
 from Scheduler import *
 from Qubits import *
 from Operators import *
-from Signals import enqueue_ready, release_request
+from Signals import ReadoutRejected, enqueue_ready, release_request
 
 
 class Pauli_corrector:
@@ -14,6 +14,10 @@ class Pauli_corrector:
     (`message.swap_id`) carry IDs, they are matched by ID even if qubits and
     classical outcomes arrive in different orders. Untagged legacy inputs fall
     back to FIFO pairing.
+
+    If a requested memory slot was evicted before readout, the memory emits
+    `ReadoutRejected(slot_id, memory_id)`; the corrector releases the in-flight
+    claim and immediately requests the next ready slot so it never stalls.
     """
 
     def __init__(self, id, delay=0, sim=None):
@@ -36,6 +40,11 @@ class Pauli_corrector:
         return len(self._ready_slots)
 
     def handle_memory(self, message):
+        if isinstance(message, ReadoutRejected):
+            if self._in_flight > 0:
+                self._in_flight -= 1
+            self._dispatch_requests()
+            return
         enqueue_ready(self._ready_slots, message)
         self._dispatch_requests()
 
