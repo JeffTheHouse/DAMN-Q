@@ -11,7 +11,7 @@ class Link:
     
 
     def handle_receive(self, qubit):
-        if isinstance(qubit, Qubit):
-            qubit.state.depolarizing_channel(self.depolarization_p)
+        if isinstance(qubit, Qubit) and qubit.state is not None:
+            qubit.depolarize(self.depolarization_p)
             qubit.loss(self.loss_p)
         scheduler.add(self.delay, lambda: self.ch_out.emit(qubit))
