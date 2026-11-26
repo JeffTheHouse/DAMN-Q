@@ -13,7 +13,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from damn_q.manifest import COMPONENT_MANIFEST, MANIFEST_VERSION
+from damn_q.manifest import CHANNEL_MANIFEST, COMPONENT_MANIFEST, MANIFEST_VERSION
 from damn_q.runner import SIMULATOR_VERSION, load_experiment, run_experiment
 from damn_q.schema import ExperimentValidationError, SCHEMA_VERSION, validate_experiment
 
@@ -114,6 +114,7 @@ def _make_handler(web_dir, experiments_dir):
                         "schema_version": SCHEMA_VERSION,
                         "manifest_version": MANIFEST_VERSION,
                         "simulator_version": SIMULATOR_VERSION,
+                        "channels": CHANNEL_MANIFEST,
                         "components": COMPONENT_MANIFEST,
                     },
                 )

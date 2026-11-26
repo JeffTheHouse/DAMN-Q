@@ -160,3 +160,33 @@ def test_workbench_release_gate_edit_run_export_cli_rerun_matches_analytic(workb
     s_ideal, ideal_payload = _post_json(f"{workbench_url}/api/run", json.loads(raw_ideal.decode("utf-8")))
     assert s_ideal == 200
     assert np.isclose(ideal_payload["result"]["measurements"][0]["mean_fidelity"], 1.0, atol=1e-12)
+
+
+def test_manifest_exposes_terminology_channels_and_hides_inactive_controls(workbench_url):
+    status, _, raw = _get(f"{workbench_url}/api/manifest")
+    assert status == 200
+    man = json.loads(raw.decode("utf-8"))
+
+    # Channels metadata present with Pauli error convention
+    assert "quantum" in man["channels"] and "classical" in man["channels"]
+    assert man["channels"]["quantum"]["label"] == "Quantum Channel"
+    assert "4p/3" in man["channels"]["quantum"]["parameters"]["depolarization_p"]["description"]
+
+    comps = man["components"]
+    assert comps["entanglement_swapper"]["label"] == "Bell-State Measurement (BSM)"
+    assert comps["entanglement_swapper"]["category"] == "operations"
+    assert comps["orchestrator"]["label"] == "Swap Controller"
+    assert comps["detector_module"]["label"] == "Qubit Arrival Monitor"
+    assert comps["classic_data_reader"]["label"] == "Joint Outcome Counter"
+    assert comps["endpoint_probe"]["category"] == "diagnostics"
+
+    # Every component has a model note and every port has a display label
+    for ctype, spec in comps.items():
+        assert spec.get("model"), f"{ctype} missing model description"
+        for pname, pspec in spec["ports"].items():
+            assert pspec.get("label"), f"{ctype}.{pname} missing display label"
+
+    # Inactive parameters are hidden from the UI while kept in schema 1.0
+    assert comps["orchestrator"]["parameters"]["delay"].get("ui_hidden") is True
+    assert comps["measurer"]["parameters"]["p_depolarization"].get("ui_hidden") is True
+    assert comps["measurer_memory_paired"]["parameters"]["p_depolarization"].get("ui_hidden") is True

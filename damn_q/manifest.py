@@ -1,145 +1,339 @@
-"""Component manifest shared by Python validation, the runner, and the browser UI."""
+"""Component and channel manifest shared by validation, the runner, and the browser UI.
+
+Schema keys (component types, port names, and parameter keys) are kept stable
+for schema 1.0 JSON compatibility, while display labels, categories, units,
+and model descriptions serve as the single source of public terminology.
+"""
 
 MANIFEST_VERSION = "1.0"
 
+CHANNEL_MANIFEST = {
+    "quantum": {
+        "label": "Quantum Channel",
+        "parameters": {
+            "delay": {
+                "label": "Propagation delay",
+                "unit": "simulation ticks",
+                "description": "Transmission latency in simulation ticks.",
+            },
+            "loss_p": {
+                "label": "Qubit loss probability per transmission",
+                "unit": "[0, 1]",
+                "description": "Probability that a transmitted qubit is lost (traced out of its register).",
+            },
+            "depolarization_p": {
+                "label": "Pauli error probability per transmission",
+                "unit": "[0, 1]",
+                "description": (
+                    "Total probability p of applying X, Y, or Z (p/3 each); "
+                    "maximally mixed weight is 4p/3."
+                ),
+            },
+        },
+    },
+    "classical": {
+        "label": "Classical Channel",
+        "parameters": {
+            "delay": {
+                "label": "Propagation delay",
+                "unit": "simulation ticks",
+                "description": "Classical message latency in simulation ticks.",
+            },
+        },
+    },
+}
+
 COMPONENT_MANIFEST = {
     "source": {
-        "label": "Entanglement / Qubit Source",
+        "label": "Quantum State Source",
         "category": "sources",
+        "model": "Ideal state preparation (|0> or |Phi+>)",
         "version": "1.0",
         "ports": {
-            "out_ch_1": {"direction": "out", "kind": "quantum"},
-            "out_ch_2": {"direction": "out", "kind": "quantum"},
+            "out_ch_1": {"direction": "out", "kind": "quantum", "label": "Qubit out 1"},
+            "out_ch_2": {"direction": "out", "kind": "quantum", "label": "Qubit out 2"},
         },
         "parameters": {
-            "delay": {"type": "number", "gt": 0, "default": 1, "description": "Emission period (ticks, > 0)"},
-            "type": {"type": "integer", "enum": [1, 2], "default": 2, "description": "1 = single |0>, 2 = Bell |Phi+>"},
+            "delay": {
+                "type": "number",
+                "gt": 0,
+                "default": 1,
+                "label": "Emission period",
+                "unit": "simulation ticks",
+                "description": "Interval between state emissions (simulation ticks, > 0).",
+            },
+            "type": {
+                "type": "integer",
+                "enum": [1, 2],
+                "enum_labels": {
+                    "1": "Single-Qubit Source (|0>)",
+                    "2": "Bell-Pair Source (|Phi+>)",
+                },
+                "default": 2,
+                "label": "Source preset",
+                "description": "1 = single |0> qubit on out_ch_1; 2 = Bell pair |Phi+> on out_ch_1 and out_ch_2.",
+            },
         },
     },
     "quantum_memory": {
         "label": "Quantum Memory",
         "category": "memories",
+        "model": "Slot-based memory with local per-tick Pauli depolarization",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum"},
-            "ch_out_q": {"direction": "out", "kind": "quantum"},
-            "ch_in_c": {"direction": "in", "kind": "classical"},
-            "ch_out_c": {"direction": "out", "kind": "classical"},
-            "ch_in_paired_memory": {"direction": "in", "kind": "classical"},
-            "ch_out_paired_memory": {"direction": "out", "kind": "classical"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
+            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out"},
+            "ch_in_c": {"direction": "in", "kind": "classical", "label": "Readout request"},
+            "ch_out_c": {"direction": "out", "kind": "classical", "label": "Slot ready"},
+            "ch_in_paired_memory": {"direction": "in", "kind": "classical", "label": "Peer herald in"},
+            "ch_out_paired_memory": {"direction": "out", "kind": "classical", "label": "Peer herald out"},
         },
         "parameters": {
-            "depolarization_p": {"type": "number", "min": 0.0, "max": 1.0, "default": 0.0, "description": "Per-tick local depolarization probability"},
-            "delay": {"type": "number", "min": 0, "default": 0, "description": "Readout delay (ticks)"},
-            "capacity": {"type": "integer", "min": 1, "default": 100, "description": "Maximum stored slots"},
-            "fifo": {"type": "integer", "enum": [0, 1], "default": 1, "description": "1 = FIFO, 0 = LIFO"},
+            "depolarization_p": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Storage Pauli error probability per tick",
+                "unit": "[0, 1]",
+                "description": (
+                    "Total probability p of applying X, Y, or Z per simulation tick (p/3 each); "
+                    "maximally mixed weight per tick is 4p/3."
+                ),
+            },
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Readout output delay",
+                "unit": "simulation ticks",
+                "description": "Delay between readout request and qubit emission (simulation ticks).",
+            },
+            "capacity": {
+                "type": "integer",
+                "min": 1,
+                "default": 100,
+                "label": "Memory slot capacity",
+                "unit": "slots",
+                "description": "Maximum number of occupied memory slots before evicting the oldest.",
+            },
+            "fifo": {
+                "type": "integer",
+                "enum": [0, 1],
+                "enum_labels": {
+                    "1": "FIFO (oldest slot first)",
+                    "0": "LIFO (newest slot first)",
+                },
+                "default": 1,
+                "label": "Untagged readout order",
+                "description": "Order used for legacy untagged readout requests (1 = FIFO, 0 = LIFO).",
+            },
         },
     },
     "entanglement_swapper": {
-        "label": "Entanglement Swapper",
-        "category": "processors",
+        "label": "Bell-State Measurement (BSM)",
+        "category": "operations",
+        "model": "Ideal projective Bell-basis measurement",
         "version": "1.0",
         "ports": {
-            "ch_in_q_1": {"direction": "in", "kind": "quantum"},
-            "ch_in_q_2": {"direction": "in", "kind": "quantum"},
-            "ch_out_c_1": {"direction": "out", "kind": "classical"},
-            "ch_out_c_2": {"direction": "out", "kind": "classical"},
+            "ch_in_q_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1"},
+            "ch_in_q_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2"},
+            "ch_out_c_1": {"direction": "out", "kind": "classical", "label": "Bell outcome 1"},
+            "ch_out_c_2": {"direction": "out", "kind": "classical", "label": "Bell outcome 2"},
         },
         "parameters": {
-            "delay": {"type": "number", "min": 0, "default": 1, "description": "Bell-measurement delay (ticks)"},
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 1,
+                "label": "Bell-outcome notification delay",
+                "unit": "simulation ticks",
+                "description": (
+                    "Bell projection is applied immediately on arrival; classical Bell outcome is "
+                    "emitted after this delay (simulation ticks)."
+                ),
+            },
         },
     },
     "orchestrator": {
-        "label": "Orchestrator",
+        "label": "Swap Controller",
         "category": "controllers",
+        "model": "Matches ready slots from two memories and requests readout",
         "version": "1.0",
         "ports": {
-            "ch_in_memory_1": {"direction": "in", "kind": "classical"},
-            "ch_in_memory_2": {"direction": "in", "kind": "classical"},
-            "ch_out_memory_1": {"direction": "out", "kind": "classical"},
-            "ch_out_memory_2": {"direction": "out", "kind": "classical"},
+            "ch_in_memory_1": {"direction": "in", "kind": "classical", "label": "Slot ready 1"},
+            "ch_in_memory_2": {"direction": "in", "kind": "classical", "label": "Slot ready 2"},
+            "ch_out_memory_1": {"direction": "out", "kind": "classical", "label": "Readout request 1"},
+            "ch_out_memory_2": {"direction": "out", "kind": "classical", "label": "Readout request 2"},
         },
         "parameters": {
-            "delay": {"type": "number", "min": 0, "default": 0, "description": "Controller delay (ticks)"},
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Controller delay (inactive)",
+                "unit": "simulation ticks",
+                "ui_hidden": True,
+                "description": "Reserved schema 1.0 parameter; currently not applied by Swap Controller.",
+            },
         },
     },
     "pauli_corrector": {
-        "label": "Pauli Corrector",
-        "category": "processors",
+        "label": "Pauli Feed-Forward",
+        "category": "controllers",
+        "model": "Applies X and Z Pauli corrections from the Bell outcome",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum"},
-            "ch_out_q": {"direction": "out", "kind": "quantum"},
-            "ch_in_es": {"direction": "in", "kind": "classical"},
-            "ch_in_memory": {"direction": "in", "kind": "classical"},
-            "ch_out_memory": {"direction": "out", "kind": "classical"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
+            "ch_out_q": {"direction": "out", "kind": "quantum", "label": "Qubit out"},
+            "ch_in_es": {"direction": "in", "kind": "classical", "label": "Bell outcome"},
+            "ch_in_memory": {"direction": "in", "kind": "classical", "label": "Slot ready"},
+            "ch_out_memory": {"direction": "out", "kind": "classical", "label": "Readout request"},
         },
         "parameters": {
-            "delay": {"type": "number", "min": 0, "default": 0, "description": "Correction delay (ticks)"},
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Corrected-qubit output delay",
+                "unit": "simulation ticks",
+                "description": (
+                    "Pauli X/Z correction is applied immediately once qubit and Bell outcome meet; "
+                    "qubit is emitted after this delay (simulation ticks)."
+                ),
+            },
         },
     },
     "measurer": {
-        "label": "Measuring Device",
-        "category": "detectors",
+        "label": "Qubit Measurement (X/Z)",
+        "category": "operations",
+        "model": "Ideal projective single-qubit measurement in X or Z basis",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum"},
-            "ch_out_result": {"direction": "out", "kind": "classical"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
+            "ch_out_result": {"direction": "out", "kind": "classical", "label": "Outcome out"},
         },
         "parameters": {
-            "delay": {"type": "number", "min": 0, "default": 0, "description": "Measurement delay (ticks)"},
-            "x_basis_p": {"type": "number", "min": 0.0, "max": 1.0, "default": 0.0, "description": "Probability of measuring in X basis"},
-            "p_depolarization": {"type": "number", "min": 0.0, "max": 1.0, "default": 0.0, "description": "Measurement depolarization parameter"},
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Outcome notification delay",
+                "unit": "simulation ticks",
+                "description": (
+                    "Measurement projection happens immediately; classical bit is emitted after "
+                    "this delay (simulation ticks)."
+                ),
+            },
+            "x_basis_p": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "X-basis selection probability",
+                "unit": "[0, 1]",
+                "description": "Probability of measuring in X basis (otherwise Z basis).",
+            },
+            "p_depolarization": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Measurement noise (inactive)",
+                "unit": "[0, 1]",
+                "ui_hidden": True,
+                "description": "Reserved schema 1.0 parameter; currently not applied by measurement.",
+            },
         },
     },
     "measurer_memory_paired": {
-        "label": "Memory-Paired Measurer",
-        "category": "detectors",
+        "label": "Swap-Triggered Memory Measurement",
+        "category": "controllers",
+        "model": "Requests memory readout on Bell outcome, then measures in X or Z basis",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum"},
-            "ch_in_es": {"direction": "in", "kind": "classical"},
-            "ch_in_memory_c": {"direction": "in", "kind": "classical"},
-            "ch_out_memory_c": {"direction": "out", "kind": "classical"},
-            "ch_out_result": {"direction": "out", "kind": "classical"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
+            "ch_in_es": {"direction": "in", "kind": "classical", "label": "Bell outcome"},
+            "ch_in_memory_c": {"direction": "in", "kind": "classical", "label": "Slot ready"},
+            "ch_out_memory_c": {"direction": "out", "kind": "classical", "label": "Readout request"},
+            "ch_out_result": {"direction": "out", "kind": "classical", "label": "Outcome out"},
         },
         "parameters": {
-            "delay": {"type": "number", "min": 0, "default": 0, "description": "Measurement delay (ticks)"},
-            "x_basis_p": {"type": "number", "min": 0.0, "max": 1.0, "default": 0.0, "description": "Probability of measuring in X basis"},
-            "p_depolarization": {"type": "number", "min": 0.0, "max": 1.0, "default": 0.0, "description": "Measurement depolarization parameter"},
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Outcome notification delay",
+                "unit": "simulation ticks",
+                "description": (
+                    "Measurement projection happens immediately; classical bit is emitted after "
+                    "this delay (simulation ticks)."
+                ),
+            },
+            "x_basis_p": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "X-basis selection probability",
+                "unit": "[0, 1]",
+                "description": "Probability of measuring in X basis (otherwise Z basis).",
+            },
+            "p_depolarization": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Measurement noise (inactive)",
+                "unit": "[0, 1]",
+                "ui_hidden": True,
+                "description": "Reserved schema 1.0 parameter; currently not applied by measurement.",
+            },
         },
     },
     "classic_data_reader": {
-        "label": "Classical Data Reader",
-        "category": "detectors",
+        "label": "Joint Outcome Counter",
+        "category": "diagnostics",
+        "model": "Pairs two classical outcome streams by arrival order (00/01/10/11)",
         "version": "1.0",
         "ports": {
-            "input_1": {"direction": "in", "kind": "classical"},
-            "input_2": {"direction": "in", "kind": "classical"},
+            "input_1": {"direction": "in", "kind": "classical", "label": "Outcome in 1"},
+            "input_2": {"direction": "in", "kind": "classical", "label": "Outcome in 2"},
         },
         "parameters": {},
     },
     "detector_module": {
-        "label": "Detector Module",
-        "category": "detectors",
+        "label": "Qubit Arrival Monitor",
+        "category": "diagnostics",
+        "model": "Counts arrivals and forwards only qubits in 4x4 (two-qubit) registers",
         "version": "1.0",
         "ports": {
-            "input_a_1": {"direction": "in", "kind": "quantum"},
-            "input_a_2": {"direction": "in", "kind": "quantum"},
-            "output_a_1": {"direction": "out", "kind": "quantum"},
-            "output_a_2": {"direction": "out", "kind": "quantum"},
+            "input_a_1": {"direction": "in", "kind": "quantum", "label": "Qubit in 1"},
+            "input_a_2": {"direction": "in", "kind": "quantum", "label": "Qubit in 2"},
+            "output_a_1": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 1"},
+            "output_a_2": {"direction": "out", "kind": "quantum", "label": "2-qubit reg out 2"},
         },
         "parameters": {
-            "trace": {"type": "integer", "enum": [0, 1], "default": 0,
-                      "description": "1 keeps arriving qubit references (unbounded); 0 keeps counters only"},
+            "trace": {
+                "type": "integer",
+                "enum": [0, 1],
+                "enum_labels": {
+                    "0": "Counters only (bounded memory)",
+                    "1": "Retain arriving qubit handles",
+                },
+                "default": 0,
+                "label": "Arrival trace mode",
+                "description": "1 retains arriving qubit handles in list_a_1/list_a_2; 0 keeps counters only.",
+            },
         },
     },
     "endpoint_probe": {
-        "label": "Quantum Endpoint Probe",
-        "category": "detectors",
+        "label": "Endpoint State Probe",
+        "category": "diagnostics",
+        "model": "Retains arriving qubit handles for run-end density-matrix inspection",
         "version": "1.0",
         "ports": {
-            "ch_in_q": {"direction": "in", "kind": "quantum"},
+            "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in"},
         },
         "parameters": {},
     },

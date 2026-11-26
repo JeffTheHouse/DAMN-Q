@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 
-from damn_q.manifest import COMPONENT_MANIFEST, MANIFEST_VERSION
+from damn_q.manifest import CHANNEL_MANIFEST, COMPONENT_MANIFEST, MANIFEST_VERSION
 from damn_q.runner import SIMULATOR_VERSION, load_experiment, run_experiment
 from damn_q.schema import ExperimentValidationError, SCHEMA_VERSION, validate_experiment
 from damn_q.server import serve_workbench
@@ -46,6 +46,7 @@ def main(argv=None):
                     "schema_version": SCHEMA_VERSION,
                     "simulator_version": SIMULATOR_VERSION,
                     "manifest_version": MANIFEST_VERSION,
+                    "channels": CHANNEL_MANIFEST,
                     "components": COMPONENT_MANIFEST,
                 },
                 indent=2,
@@ -87,9 +88,10 @@ def main(argv=None):
             for m in result["measurements"]:
                 if m["type"] == "bell_fidelity":
                     print(
-                        f"Bell fidelity ({m['probes'][0]}, {m['probes'][1]}): "
-                        f"pairs={m['pairs']}, shared_register={m['all_shared_register']}, "
-                        f"mean_fidelity={m['mean_fidelity']}"
+                        f"Mean simulated fidelity to |Phi+> (run-end) "
+                        f"({m['probes'][0]}, {m['probes'][1]}): "
+                        f"matched_samples={m['pairs']}, mean_fidelity={m['mean_fidelity']} "
+                        f"[diagnostic: shared_register={m['all_shared_register']}]"
                     )
         return 0
 

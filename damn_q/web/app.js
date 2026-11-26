@@ -135,7 +135,7 @@
       if (!byCat[cat]) byCat[cat] = [];
       byCat[cat].push([ctype, spec]);
     }
-    const order = ["sources", "memories", "processors", "controllers", "detectors", "other"];
+    const order = ["sources", "memories", "operations", "controllers", "diagnostics", "other"];
     for (const cat of order) {
       const entries = byCat[cat];
       if (!entries || !entries.length) continue;
@@ -188,16 +188,16 @@
   function summarizeComponent(comp) {
     const p = comp.params || {};
     if (comp.type === "quantum_memory") {
-      return `p_dep=${p.depolarization_p ?? 0} cap=${p.capacity ?? 100} ${p.fifo === 0 ? "LIFO" : "FIFO"}`;
+      return `p=${p.depolarization_p ?? 0}/tick cap=${p.capacity ?? 100} ${p.fifo === 0 ? "LIFO" : "FIFO"}`;
     }
     if (comp.type === "source") {
-      return `delay=${p.delay ?? 1} type=${p.type ?? 2}`;
+      return `T=${p.delay ?? 1} ${p.type === 1 ? "|0>" : "|Phi+>"}`;
     }
-    if (comp.type === "entanglement_swapper" || comp.type === "pauli_corrector" || comp.type === "orchestrator") {
-      return `delay=${p.delay ?? 0}`;
+    if (comp.type === "entanglement_swapper" || comp.type === "pauli_corrector") {
+      return `out_delay=${p.delay ?? 0}`;
     }
     if (comp.type === "measurer" || comp.type === "measurer_memory_paired") {
-      return `delay=${p.delay ?? 0} x_p=${p.x_basis_p ?? 0}`;
+      return `out_delay=${p.delay ?? 0} x_p=${p.x_basis_p ?? 0}`;
     }
     if (comp.type === "detector_module") {
       return `trace=${p.trace ?? 0}`;
@@ -246,10 +246,11 @@
           portEl.dataset.port = pname;
           portEl.dataset.direction = pspec.direction;
           portEl.dataset.kind = pspec.kind;
-          portEl.title = `${comp.id}.${pname} (${pspec.direction}, ${pspec.kind})`;
+          const portDisplay = pspec.label || pname;
+          portEl.title = `${comp.id}.${pname} — ${portDisplay} (${pspec.direction}, ${pspec.kind})`;
 
           const dot = `<span class="port-dot ${pspec.kind}"></span>`;
-          const label = `<span class="port-name">${escapeHtml(pname)}</span>`;
+          const label = `<span class="port-name">${escapeHtml(portDisplay)}</span>`;
           portEl.innerHTML = pspec.direction === "in" ? `${dot}${label}` : `${label}${dot}`;
 
           if (state.wiring) {
@@ -477,6 +478,13 @@
       els.inspectorTitle.textContent = spec ? spec.label : comp.type;
       els.btnSelectExp.hidden = false;
 
+      if (spec && spec.model) {
+        const modelEl = document.createElement("div");
+        modelEl.className = "model-note";
+        modelEl.textContent = spec.model;
+        els.inspectorBody.appendChild(modelEl);
+      }
+
       // Component ID field
       const idField = document.createElement("div");
       idField.className = "field";
@@ -493,15 +501,17 @@
       idField.appendChild(idInput);
       els.inspectorBody.appendChild(idField);
 
-      // Parameters from manifest
+      // Parameters from manifest (hide inactive/reserved controls marked ui_hidden)
       const paramsSpec = spec ? spec.parameters || {} : {};
       for (const [pname, pspec] of Object.entries(paramsSpec)) {
+        if (pspec.ui_hidden) continue;
         const field = document.createElement("div");
         field.className = "field";
         const inputId = `param-${pname}`;
         const label = document.createElement("label");
         label.htmlFor = inputId;
-        label.textContent = pname;
+        const baseLabel = pspec.label || pname;
+        label.textContent = pspec.unit ? `${baseLabel} (${pspec.unit})` : baseLabel;
         field.appendChild(label);
 
         const currentVal = comp.params[pname] !== undefined ? comp.params[pname] : pspec.default;
@@ -512,7 +522,8 @@
           for (const optVal of pspec.enum) {
             const opt = document.createElement("option");
             opt.value = String(optVal);
-            opt.textContent = String(optVal);
+            const enumLabel = pspec.enum_labels && pspec.enum_labels[String(optVal)];
+            opt.textContent = enumLabel || String(optVal);
             if (optVal === currentVal) opt.selected = true;
             control.appendChild(opt);
           }
@@ -566,20 +577,47 @@
         return;
       }
       const kind = connectionKind(conn);
-      els.inspectorTitle.textContent = "Connection";
+      const chSpec = state.manifest && state.manifest.channels ? state.manifest.channels[kind] : null;
+      const chLabel = chSpec ? chSpec.label : (kind === "quantum" ? "Quantum Channel" : "Classical Channel");
+      els.inspectorTitle.textContent = chLabel;
       els.btnSelectExp.hidden = false;
 
       const info = document.createElement("div");
       info.innerHTML = `
-        <span class="kind-badge ${kind}">${kind} link</span>
+        <span class="kind-badge ${kind}">${escapeHtml(chLabel)}</span>
         <div class="field"><label>Route</label><div class="muted">${escapeHtml(conn.from.component)}.${escapeHtml(conn.from.port)} &rarr; ${escapeHtml(conn.to.component)}.${escapeHtml(conn.to.port)}</div></div>
       `;
       els.inspectorBody.appendChild(info);
 
-      addNumericConnField(conn, "delay", "Delay (ticks)", 0, undefined);
+      const chParams = chSpec ? chSpec.parameters || {} : {};
+      const delaySpec = chParams.delay || {};
+      addNumericConnField(
+        conn,
+        "delay",
+        `${delaySpec.label || "Propagation delay"} (${delaySpec.unit || "simulation ticks"})`,
+        0,
+        undefined,
+        delaySpec.description
+      );
       if (kind === "quantum") {
-        addNumericConnField(conn, "loss_p", "Loss probability [0, 1]", 0, 1);
-        addNumericConnField(conn, "depolarization_p", "Depolarization probability [0, 1]", 0, 1);
+        const lossSpec = chParams.loss_p || {};
+        const depolSpec = chParams.depolarization_p || {};
+        addNumericConnField(
+          conn,
+          "loss_p",
+          `${lossSpec.label || "Qubit loss probability per transmission"} (${lossSpec.unit || "[0, 1]"})`,
+          0,
+          1,
+          lossSpec.description
+        );
+        addNumericConnField(
+          conn,
+          "depolarization_p",
+          `${depolSpec.label || "Pauli error probability per transmission"} (${depolSpec.unit || "[0, 1]"})`,
+          0,
+          1,
+          depolSpec.description
+        );
       }
 
       const delBtn = document.createElement("button");
@@ -681,11 +719,11 @@
     els.inspectorBody.appendChild(measField);
   }
 
-  function addNumericConnField(conn, key, labelText, min, max) {
+  function addNumericConnField(conn, key, labelText, min, max, description = "") {
     const field = document.createElement("div");
     field.className = "field";
     const id = `conn-${key}`;
-    field.innerHTML = `<label for="${id}">${labelText}</label>`;
+    field.innerHTML = `<label for="${id}">${escapeHtml(labelText)}</label>`;
     const input = document.createElement("input");
     input.id = id;
     input.type = "number";
@@ -706,6 +744,12 @@
       }
     });
     field.appendChild(input);
+    if (description) {
+      const help = document.createElement("div");
+      help.className = "field-help";
+      help.textContent = description;
+      field.appendChild(help);
+    }
     els.inspectorBody.appendChild(field);
   }
 
@@ -759,10 +803,11 @@
         card.className = "result-card";
         const fStr = m.mean_fidelity === null ? "—" : String(m.mean_fidelity);
         card.innerHTML = `
-          <h3>Bell Fidelity (${escapeHtml(m.probes[0])}, ${escapeHtml(m.probes[1])})</h3>
+          <h3>Mean simulated fidelity to |&Phi;<sup>+</sup>&rang; (run-end)</h3>
+          <div class="field-help">${escapeHtml(m.probes[0])} &harr; ${escapeHtml(m.probes[1])} (paired by arrival index)</div>
           <div class="metric-big" data-testid="mean-fidelity">${escapeHtml(fStr)}</div>
-          <div class="metric-row"><span>Pairs</span><span>${m.pairs}</span></div>
-          <div class="metric-row"><span>Shared register</span><span>${m.all_shared_register}</span></div>
+          <div class="metric-row"><span>Matched endpoint samples</span><span>${m.pairs}</span></div>
+          <div class="metric-row diagnostic-row"><span>Diagnostic: shared register</span><span>${m.all_shared_register}</span></div>
         `;
         frag.appendChild(card);
       }
@@ -772,7 +817,7 @@
       const card = document.createElement("div");
       card.className = "result-card";
       card.innerHTML = `
-        <h3>Reader: ${escapeHtml(rid)}</h3>
+        <h3>Joint Outcome Counter: ${escapeHtml(rid)}</h3>
         <div class="metric-row"><span>00 / 11</span><span>${counts["00"]} / ${counts["11"]}</span></div>
         <div class="metric-row"><span>01 / 10</span><span>${counts["01"]} / ${counts["10"]}</span></div>
       `;
@@ -783,10 +828,10 @@
       const card = document.createElement("div");
       card.className = "result-card";
       card.innerHTML = `
-        <h3>Detector: ${escapeHtml(did)}</h3>
-        <div class="metric-row"><span>Ebits (1 / 2)</span><span>${d.ebits_1} / ${d.ebits_2}</span></div>
-        <div class="metric-row"><span>Singles (1 / 2)</span><span>${d.single_1} / ${d.single_2}</span></div>
-        <div class="metric-row"><span>Total (1 / 2)</span><span>${d.total_1} / ${d.total_2}</span></div>
+        <h3>Qubit Arrival Monitor: ${escapeHtml(did)}</h3>
+        <div class="metric-row"><span>Arrivals in two-qubit registers (1 / 2)</span><span>${d.ebits_1} / ${d.ebits_2}</span></div>
+        <div class="metric-row"><span>Single-qubit arrivals (1 / 2)</span><span>${d.single_1} / ${d.single_2}</span></div>
+        <div class="metric-row"><span>Total arrivals (1 / 2)</span><span>${d.total_1} / ${d.total_2}</span></div>
       `;
       frag.appendChild(card);
     }
