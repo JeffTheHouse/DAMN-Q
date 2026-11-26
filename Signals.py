@@ -25,6 +25,7 @@ class Ready:
 class Release:
     slot_id: int
     memory_id: Optional[Any] = None
+    swap_request_id: Optional[Any] = None
 
 
 @dataclass(frozen=True)
@@ -45,9 +46,10 @@ class PeerHerald(int):
 class BellOutcome(str):
     """Classical Bell-state measurement outcome (`"00"`, `"01"`, `"10"`, `"11"`)."""
 
-    def __new__(cls, bits, swap_id=None):
+    def __new__(cls, bits, swap_id=None, swap_request_id=None):
         obj = super().__new__(cls, bits)
         obj.swap_id = swap_id
+        obj.swap_request_id = swap_request_id
         return obj
 
 
@@ -76,10 +78,14 @@ def enqueue_ready(queue, message):
             queue.append((None, None))
 
 
-def release_request(entry):
+def release_request(entry, swap_request_id=None):
     """Tagged Release for a known slot, or legacy untagged request otherwise."""
     if isinstance(entry, tuple):
         slot_id, memory_id = entry
     else:
         slot_id, memory_id = entry, None
-    return Release(slot_id, memory_id=memory_id) if slot_id is not None else 1
+    return (
+        Release(slot_id, memory_id=memory_id, swap_request_id=swap_request_id)
+        if slot_id is not None
+        else 1
+    )

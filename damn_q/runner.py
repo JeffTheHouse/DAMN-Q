@@ -160,7 +160,13 @@ def _instantiate_component(comp_id, ctype, params, sim):
             sim=sim,
         )
     if ctype == "entanglement_swapper":
-        return Entaglment_swapping_module(comp_id, delay=params["delay"], sim=sim)
+        return Entaglment_swapping_module(
+            comp_id,
+            delay=params["delay"],
+            queue_capacity=params["queue_capacity"],
+            queue_ttl=params["queue_ttl"],
+            sim=sim,
+        )
     if ctype == "orchestrator":
         return Orchestrator(comp_id, delay=params["delay"], sim=sim)
     if ctype == "pauli_corrector":
@@ -272,6 +278,8 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         elif ctype == "entanglement_swapper":
             swappers_metrics[cid] = {
                 "completed": obj.counter,
+                "queued": obj.queued_count,
+                "expired": obj.expired_count,
                 "rejected": obj.rejected_count,
             }
         elif ctype == "classic_data_reader":

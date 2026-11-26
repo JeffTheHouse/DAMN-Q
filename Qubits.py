@@ -300,10 +300,11 @@ class State(Register):
 
 
 class Qubit:
-    def __init__(self, id, state, pair_id=None, created_at=None):
+    def __init__(self, id, state, pair_id=None, created_at=None, swap_request_id=None):
         self.id = id
         self.pair_id = pair_id
         self.created_at = created_at
+        self.swap_request_id = swap_request_id
         self._register = None
         self.state = state
 

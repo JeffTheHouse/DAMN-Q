@@ -207,6 +207,8 @@ class Quantum_memory:
 
             self.memory.pop(slot_id)
             self._remove_confirmed_slot(slot_id)
+            if request.swap_request_id is not None:
+                emitted_qubit.swap_request_id = request.swap_request_id
         else:
             if not self._confirmed_order:
                 return

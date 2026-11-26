@@ -38,6 +38,7 @@ class Simulation:
         self._link_ids = itertools.count()
         self._pair_ids = itertools.count(1)
         self._swap_ids = itertools.count(1)
+        self._swap_request_ids = itertools.count(1)
 
     @property
     def time(self):
@@ -51,6 +52,9 @@ class Simulation:
 
     def next_swap_id(self):
         return next(self._swap_ids)
+
+    def next_swap_request_id(self):
+        return next(self._swap_request_ids)
 
     def add(self, delay, callback):
         if delay < 0:
@@ -100,4 +104,5 @@ class Simulation:
         self._link_ids = itertools.count()
         self._pair_ids = itertools.count(1)
         self._swap_ids = itertools.count(1)
+        self._swap_request_ids = itertools.count(1)
         self.rng = random.Random(self.seed)

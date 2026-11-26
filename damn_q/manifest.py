@@ -190,6 +190,28 @@ COMPONENT_MANIFEST = {
                     "emitted after this delay (simulation ticks)."
                 ),
             },
+            "queue_capacity": {
+                "type": "integer",
+                "min": 1,
+                "default": 1,
+                "label": "Input queue capacity per side",
+                "unit": "qubits",
+                "description": (
+                    "1 = reject-when-busy (default). Values > 1 enable a bounded per-side queue "
+                    "matching arrivals by swap_request_id."
+                ),
+            },
+            "queue_ttl": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Queue expiry timeout (0 = none)",
+                "unit": "simulation ticks",
+                "description": (
+                    "Maximum ticks a queued qubit waits for its swap partner before expiring "
+                    "(0 disables expiry)."
+                ),
+            },
         },
     },
     "orchestrator": {

@@ -34,9 +34,18 @@ class Orchestrator:
         self.coppler()
 
     def coppler(self):
-        """Pair the oldest ready slot on each side and release exactly those slots."""
+        """Pair the oldest ready slot on each side and release them with a shared swap_request_id."""
         if self._ready_1 and self._ready_2:
-            request_1 = release_request(self._ready_1.popleft())
-            request_2 = release_request(self._ready_2.popleft())
+            e1 = self._ready_1.popleft()
+            e2 = self._ready_2.popleft()
+            # Only attach swap_request_id when at least one side has a real memory_id
+            # (keeps bare Ready(5) unit tests returning Release(5) cleanly).
+            has_mem_id = (
+                (isinstance(e1, tuple) and e1[1] is not None)
+                or (isinstance(e2, tuple) and e2[1] is not None)
+            )
+            req_id = self.sim.next_swap_request_id() if has_mem_id else None
+            request_1 = release_request(e1, swap_request_id=req_id)
+            request_2 = release_request(e2, swap_request_id=req_id)
             self.sim.add(0, lambda: self.ch_out_memory_1.emit(request_1))
             self.sim.add(0, lambda: self.ch_out_memory_2.emit(request_2))

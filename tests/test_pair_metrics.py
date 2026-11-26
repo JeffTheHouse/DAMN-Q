@@ -172,6 +172,8 @@ def test_repeater_reports_separate_attempts_heralds_swaps_and_delivery_latency()
     assert metrics["memories"]["memory_a_1"]["heralded_pairs"] == 1
     assert metrics["memories"]["memory_a_1"]["evicted"] == 0
     assert metrics["swappers"]["es"]["completed"] == 1
+    assert metrics["swappers"]["es"]["queued"] == 1
+    assert metrics["swappers"]["es"]["expired"] == 0
     assert metrics["swappers"]["es"]["rejected"] == 0
 
 
@@ -321,3 +323,87 @@ def test_wrong_swap_qubit_does_not_block_readout_from_memory():
     sim.run(3)
     assert corrected == [second, first]
     assert corrector._in_flight == 0
+
+
+def test_bsm_bounded_queue_matches_reordered_swap_requests_by_id():
+    sim = Simulation(seed=7)
+    es = Entaglment_swapping_module(1, delay=0, queue_capacity=2, queue_ttl=0, sim=sim)
+    pc = Pauli_corrector(1, delay=0, sim=sim)
+    bind(es.ch_out_c_2, pc.ch_in_es)
+
+    corrected = []
+    bind(pc.ch_out_q, Handler(corrected.append))
+
+    # Request 101: elementary pairs (pair_id=1) and (pair_id=2)
+    a1_101, a2_101 = Qubit.bell_state(1, 2, State(phi_plus.copy()), pair_id=1)
+    b1_101, b2_101 = Qubit.bell_state(3, 4, State(phi_plus.copy()), pair_id=2)
+    a2_101.swap_request_id = 101
+    b1_101.swap_request_id = 101
+
+    # Request 102: elementary pairs (pair_id=3) and (pair_id=4)
+    a1_102, a2_102 = Qubit.bell_state(5, 6, State(phi_plus.copy()), pair_id=3)
+    b1_102, b2_102 = Qubit.bell_state(7, 8, State(phi_plus.copy()), pair_id=4)
+    a2_102.swap_request_id = 102
+    b1_102.swap_request_id = 102
+
+    # Side 1 receives [101, 102]; Side 2 receives [102, 101] (reversed order)
+    es.ch_in_q_1.handle(a2_101)
+    es.ch_in_q_1.handle(a2_102)
+    es.ch_in_q_2.handle(b1_102)
+    es.ch_in_q_2.handle(b1_101)
+    sim.run(1)
+
+    assert es.counter == 2
+    assert es.queued_count == 2
+    assert es.expired_count == 0
+    assert es.rejected_count == 0
+
+    # Correct both remote endpoints
+    pc.ch_in_q.handle(b2_102)
+    pc.ch_in_q.handle(b2_101)
+    sim.run(2)
+
+    assert len(corrected) == 2
+    # Each request must entangle its own remote endpoints, NOT cross-entangle
+    assert a1_101.register is b2_101.register
+    assert a1_102.register is b2_102.register
+    assert a1_101.register is not a1_102.register
+    assert np.allclose(a1_101.register.reduced_density_matrix([a1_101, b2_101]), phi_plus)
+    assert np.allclose(a1_102.register.reduced_density_matrix([a1_102, b2_102]), phi_plus)
+
+
+def test_bsm_queue_overflow_and_ttl_expiry_report_separate_counts():
+    sim = Simulation(seed=11)
+    es = Entaglment_swapping_module(1, delay=0, queue_capacity=2, queue_ttl=5, sim=sim)
+
+    a1_1, a2_1 = Qubit.bell_state(1, 2, State(phi_plus.copy()), pair_id=1)
+    a1_2, a2_2 = Qubit.bell_state(3, 4, State(phi_plus.copy()), pair_id=2)
+    a1_3, a2_3 = Qubit.bell_state(5, 6, State(phi_plus.copy()), pair_id=3)
+    b1_2, b2_2 = Qubit.bell_state(7, 8, State(phi_plus.copy()), pair_id=4)
+
+    a2_1.swap_request_id = 1
+    a2_2.swap_request_id = 2
+    a2_3.swap_request_id = 3
+    b1_2.swap_request_id = 2
+
+    # 3 arrivals on side 1 at t=0 with capacity=2 -> 2 queued, 3rd rejected
+    es.ch_in_q_1.handle(a2_1)
+    es.ch_in_q_1.handle(a2_2)
+    es.ch_in_q_1.handle(a2_3)
+    assert es.queued_count == 2
+    assert es.rejected_count == 1
+    assert a2_3.state is None
+
+    # Partner for req 2 arrives at t=2 (before TTL=5) -> completes swap, cancels expiry
+    sim.run(2)
+    es.ch_in_q_2.handle(b1_2)
+    sim.run(3)
+    assert es.counter == 1
+    assert es.expired_count == 0
+    assert a1_2.register is b2_2.register
+
+    # Advance past TTL=5 -> req 1 expires and is traced out
+    sim.run(6)
+    assert es.expired_count == 1
+    assert a2_1.state is None
+    assert a1_2.register is b2_2.register
