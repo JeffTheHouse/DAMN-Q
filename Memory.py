@@ -51,26 +51,32 @@ class Quantum_memory:
         return len(self.memory) + len(self.temperory_memory)
 
     def _evict_oldest(self):
-        oldest_confirmed = self._confirmed_order[0] if self._confirmed_order else None
+        oldest_confirmed_idx = None
+        oldest_confirmed = None
+        for idx, sid in enumerate(self._confirmed_order):
+            if sid is not None and sid in self.memory:
+                oldest_confirmed_idx = idx
+                oldest_confirmed = sid
+                break
+
+        oldest_pending_idx = None
         oldest_pending = None
-        for sid in self._pending_order:
+        for idx, sid in enumerate(self._pending_order):
             if sid is not None and sid in self.temperory_memory:
+                oldest_pending_idx = idx
                 oldest_pending = sid
                 break
 
         if oldest_confirmed is not None and (
             oldest_pending is None or oldest_confirmed < oldest_pending
         ):
-            self._confirmed_order.popleft()
+            self._confirmed_order[oldest_confirmed_idx] = None
             _, evicted_qubit = self.memory.pop(oldest_confirmed)
             evicted_qubit.state = None
         elif oldest_pending is not None:
             _, evicted_qubit = self.temperory_memory.pop(oldest_pending)
             evicted_qubit.state = None
-            for idx, sid in enumerate(self._pending_order):
-                if sid == oldest_pending:
-                    self._pending_order[idx] = None
-                    break
+            self._pending_order[oldest_pending_idx] = None
 
     def handle_paired_memory(self, message):
         if not self._pending_order:
@@ -104,14 +110,26 @@ class Quantum_memory:
     def handle_classic(self, request):
         if not self._confirmed_order:
             return
-        if self.fifo == 1:
-            slot_id = self._confirmed_order.popleft()
-        else:
-            slot_id = self._confirmed_order.pop()
+        slot_id = self._confirmed_order[0] if self.fifo == 1 else self._confirmed_order[-1]
+        if slot_id is None or slot_id not in self.memory:
+            # Stale release request for an already-evicted confirmed slot
+            if self.fifo == 1:
+                self._confirmed_order.popleft()
+            else:
+                self._confirmed_order.pop()
+            return
 
-        arrival_time, emitted_qubit = self.memory.pop(slot_id)
+        arrival_time, emitted_qubit = self.memory[slot_id]
         passed_time = scheduler._time - arrival_time
+        # Validate duration before mutating memory occupancy
         p_eff = _composed_depolarization_p(self.depolarization_p, passed_time)
+
+        if self.fifo == 1:
+            self._confirmed_order.popleft()
+        else:
+            self._confirmed_order.pop()
+        self.memory.pop(slot_id)
+
         if p_eff != 0.0 and emitted_qubit.state is not None:
             emitted_qubit.depolarize(p_eff)
         scheduler.add(self.delay, lambda q=emitted_qubit: self.ch_out_q.emit(q))

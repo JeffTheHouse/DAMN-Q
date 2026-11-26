@@ -139,6 +139,38 @@ def test_storage_depolarization_accrues_locally_over_integer_ticks(ticks):
     assert np.allclose(reg.reduced_density_matrix([q_stored]), expected_stored)
 
 
+def test_stale_release_after_eviction_does_not_consume_next_qubit():
+    mem = Quantum_memory(1, depolarization_p=0, delay=0, capacity=1)
+    released = []
+    bind(mem.ch_out_q, Handler(lambda q: released.append(q)))
+
+    q_a = Qubit(1, State(KET0.copy()))
+    q_b = Qubit(2, State(KET1.copy()))
+
+    # Confirm A
+    mem.ch_in_q.handle(q_a)
+    mem.ch_in_paired_memory.handle(1)
+    assert len(mem.memory) == 1
+
+    # Arrive and confirm B -> evicts A
+    mem.ch_in_q.handle(q_b)
+    assert q_a.state is None
+    mem.ch_in_paired_memory.handle(1)
+    assert len(mem.memory) == 1
+
+    # First release request is A's stale notification -> must NOT release B
+    mem.ch_in_c.handle(1)
+    scheduler.run(1)
+    assert released == []
+    assert len(mem.memory) == 1
+
+    # Second release request is B's own notification -> releases B
+    mem.ch_in_c.handle(1)
+    scheduler.run(2)
+    assert released == [q_b]
+    assert len(mem.memory) == 0
+
+
 def test_storage_depolarization_rejects_fractional_ticks():
     mem = Quantum_memory(1, depolarization_p=0.8, delay=0, capacity=4)
     q = Qubit(1, State(KET0.copy()))
@@ -148,6 +180,11 @@ def test_storage_depolarization_rejects_fractional_ticks():
     scheduler.run(1.5)
     with pytest.raises(ValueError, match="integer storage ticks"):
         mem.ch_in_c.handle(1)
+
+    # Rejected readout must not remove the slot from memory
+    assert mem.occupied_slots == 1
+    assert len(mem.memory) == 1
+    assert q.state is not None
 
 
 def _build_wired_repeater(p_mem=(0.0, 0.0, 0.0, 0.0), link_delay=5, swap_delay=1):
