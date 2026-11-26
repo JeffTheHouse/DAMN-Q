@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "name": "Three-Node Repeater (Ideal)",
+  "description": "Ideal three-node quantum repeater with four quantum memories, Bell-basis entanglement swapping, and Pauli correction.",
+  "run": {
+    "until": 150,
+    "seed": 42
+  },
+  "components": [
+    {"id": "source_a", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 240, "y": 240}},
+    {"id": "source_b", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 760, "y": 240}},
+    {"id": "memory_a_1", "type": "quantum_memory", "params": {"depolarization_p": 0.0, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 100, "y": 240}},
+    {"id": "memory_a_2", "type": "quantum_memory", "params": {"depolarization_p": 0.0, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 380, "y": 240}},
+    {"id": "memory_b_1", "type": "quantum_memory", "params": {"depolarization_p": 0.0, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 620, "y": 240}},
+    {"id": "memory_b_2", "type": "quantum_memory", "params": {"depolarization_p": 0.0, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 900, "y": 240}},
+    {"id": "es", "type": "entanglement_swapper", "params": {"delay": 1}, "position": {"x": 500, "y": 140}},
+    {"id": "orchestrator", "type": "orchestrator", "params": {"delay": 0}, "position": {"x": 500, "y": 320}},
+    {"id": "pc", "type": "pauli_corrector", "params": {"delay": 0}, "position": {"x": 900, "y": 120}},
+    {"id": "probe_a", "type": "endpoint_probe", "params": {}, "position": {"x": 100, "y": 120}},
+    {"id": "probe_b", "type": "endpoint_probe", "params": {}, "position": {"x": 1060, "y": 120}}
+  ],
+  "connections": [
+    {"from": {"component": "source_a", "port": "out_ch_1"}, "to": {"component": "memory_a_1", "port": "ch_in_q"}, "delay": 5},
+    {"from": {"component": "source_a", "port": "out_ch_2"}, "to": {"component": "memory_a_2", "port": "ch_in_q"}, "delay": 5},
+    {"from": {"component": "source_b", "port": "out_ch_1"}, "to": {"component": "memory_b_1", "port": "ch_in_q"}, "delay": 5},
+    {"from": {"component": "source_b", "port": "out_ch_2"}, "to": {"component": "memory_b_2", "port": "ch_in_q"}, "delay": 5},
+
+    {"from": {"component": "memory_a_2", "port": "ch_out_q"}, "to": {"component": "es", "port": "ch_in_q_1"}, "delay": 0},
+    {"from": {"component": "memory_b_1", "port": "ch_out_q"}, "to": {"component": "es", "port": "ch_in_q_2"}, "delay": 0},
+
+    {"from": {"component": "memory_a_2", "port": "ch_out_c"}, "to": {"component": "orchestrator", "port": "ch_in_memory_1"}, "delay": 0},
+    {"from": {"component": "memory_b_1", "port": "ch_out_c"}, "to": {"component": "orchestrator", "port": "ch_in_memory_2"}, "delay": 0},
+    {"from": {"component": "orchestrator", "port": "ch_out_memory_1"}, "to": {"component": "memory_a_2", "port": "ch_in_c"}, "delay": 0},
+    {"from": {"component": "orchestrator", "port": "ch_out_memory_2"}, "to": {"component": "memory_b_1", "port": "ch_in_c"}, "delay": 0},
+
+    {"from": {"component": "memory_a_1", "port": "ch_out_paired_memory"}, "to": {"component": "memory_a_2", "port": "ch_in_paired_memory"}, "delay": 5},
+    {"from": {"component": "memory_a_2", "port": "ch_out_paired_memory"}, "to": {"component": "memory_a_1", "port": "ch_in_paired_memory"}, "delay": 5},
+    {"from": {"component": "memory_b_1", "port": "ch_out_paired_memory"}, "to": {"component": "memory_b_2", "port": "ch_in_paired_memory"}, "delay": 5},
+    {"from": {"component": "memory_b_2", "port": "ch_out_paired_memory"}, "to": {"component": "memory_b_1", "port": "ch_in_paired_memory"}, "delay": 5},
+
+    {"from": {"component": "es", "port": "ch_out_c_1"}, "to": {"component": "memory_a_1", "port": "ch_in_c"}, "delay": 5},
+    {"from": {"component": "es", "port": "ch_out_c_2"}, "to": {"component": "pc", "port": "ch_in_es"}, "delay": 5},
+
+    {"from": {"component": "memory_b_2", "port": "ch_out_q"}, "to": {"component": "pc", "port": "ch_in_q"}, "delay": 0},
+    {"from": {"component": "memory_b_2", "port": "ch_out_c"}, "to": {"component": "pc", "port": "ch_in_memory"}, "delay": 0},
+    {"from": {"component": "pc", "port": "ch_out_memory"}, "to": {"component": "memory_b_2", "port": "ch_in_c"}, "delay": 0},
+
+    {"from": {"component": "memory_a_1", "port": "ch_out_q"}, "to": {"component": "probe_a", "port": "ch_in_q"}, "delay": 0},
+    {"from": {"component": "pc", "port": "ch_out_q"}, "to": {"component": "probe_b", "port": "ch_in_q"}, "delay": 0}
+  ],
+  "measurements": [
+    {"type": "bell_fidelity", "probes": ["probe_a", "probe_b"]}
+  ]
+}
