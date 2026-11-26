@@ -193,3 +193,16 @@ def test_assigning_to_full_register_raises_without_detaching():
     assert orig_reg.num_qubits == 2
     assert np.allclose(orig_reg.density_matrix, rho_01)
     assert full_reg.qubits == (q3,)
+
+
+def test_direct_attach_rejects_already_owned_qubit():
+    reg_a = State(KET0.copy())
+    q1 = Qubit(1, reg_a)
+    reg_b = State(KET1.copy())
+
+    with pytest.raises(ValueError):
+        reg_b.attach(q1)
+
+    assert q1.register is reg_a
+    assert reg_a.qubits == (q1,)
+    assert reg_b.qubits == ()

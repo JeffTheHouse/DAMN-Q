@@ -65,6 +65,10 @@ class Register:
         if qubit in self._qubits:
             qubit._register = self
             return
+        if qubit._register is not None and qubit._register is not self:
+            raise ValueError(
+                f"Qubit {qubit.id!r} is already owned by another register."
+            )
         if len(self._qubits) >= self.num_qubits:
             raise ValueError(
                 f"Register already has {len(self._qubits)} qubit(s) for a {self.num_qubits}-qubit state."
@@ -176,6 +180,7 @@ class Register:
         else:
             remaining_rho = _partial_trace_single(post, n, idx) if post is not None else _partial_trace_single(rho, n, idx)
             self._qubits.pop(idx)
+            qubit._register = None
             self.density_matrix = remaining_rho
             # Detach measured qubit into its own post-measurement 1-qubit state
             collapsed = State(proj.copy())
@@ -190,10 +195,12 @@ class Register:
             return reg_a
         joint_rho = np.kron(reg_a.density_matrix, reg_b.density_matrix)
         joint = State(joint_rho)
-        for q in list(reg_a._qubits) + list(reg_b._qubits):
-            joint.attach(q)
+        moving = list(reg_a._qubits) + list(reg_b._qubits)
         reg_a._qubits = []
         reg_b._qubits = []
+        for q in moving:
+            q._register = None
+            joint.attach(q)
         return joint
 
     @classmethod
