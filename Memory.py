@@ -1,3 +1,4 @@
+from bisect import insort
 from collections import deque
 
 from Qubits import *
@@ -112,7 +113,11 @@ class Quantum_memory:
         arrival_time, qubit = self.temperory_memory.pop(slot_id)
         if ok:
             self.memory[slot_id] = (arrival_time, qubit)
-            self._confirmed_order.append(slot_id)
+            # Slot IDs follow qubit arrival, while heralds can arrive out of order.
+            if not self._confirmed_order or self._confirmed_order[-1] < slot_id:
+                self._confirmed_order.append(slot_id)
+            else:
+                insort(self._confirmed_order, slot_id)
             self.heralded_count += 1
             self.sim.add(0, lambda s=slot_id: self.ch_out_c.emit(Ready(s, memory_id=self.id)))
         else:

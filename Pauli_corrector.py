@@ -62,10 +62,10 @@ class Pauli_corrector:
             self._dispatch_requests()
 
     def _dispatch_requests(self):
-        """Request one known slot per ES message still lacking a qubit."""
-        while self._ready_slots and (
-            len(self._pending_messages) > len(self._pending_qubits) + self._in_flight
-        ):
+        """Request one known slot per unmatched Bell outcome."""
+        # Matching has already run. Buffered qubits for other swaps cannot
+        # satisfy these outcomes, so only outstanding readouts count here.
+        while self._ready_slots and len(self._pending_messages) > self._in_flight:
             request = release_request(self._ready_slots.popleft())
             self._in_flight += 1
             self.sim.add(0, lambda r=request: self.ch_out_memory.emit(r))

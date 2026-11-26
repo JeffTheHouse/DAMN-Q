@@ -273,3 +273,51 @@ def test_peer_heralds_match_by_pair_id_when_out_of_order():
     sim.run(2)
     assert len(mem.memory) == 2
     assert len(ready) == 2
+
+
+def test_reordered_heralds_preserve_oldest_slot_eviction():
+    sim = Simulation()
+    mem = Quantum_memory("mem", 0, capacity=2, sim=sim)
+    first = Qubit(1, State(KET0.copy()), pair_id=10)
+    second = Qubit(2, State(KET1.copy()), pair_id=11)
+    third = Qubit(3, State(KET0.copy()), pair_id=12)
+
+    mem.ch_in_q.handle(first)
+    mem.ch_in_q.handle(second)
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=11))
+    mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=10))
+    mem.ch_in_q.handle(third)
+
+    assert first.state is None
+    assert second.state is not None
+    assert [qubit for _, qubit in mem.memory.values()] == [second]
+    assert mem.occupied_slots == 2
+
+
+def test_wrong_swap_qubit_does_not_block_readout_from_memory():
+    sim = Simulation()
+    mem = Quantum_memory("mem", 0, capacity=2, sim=sim)
+    corrector = Pauli_corrector("pc", sim=sim)
+    connect(mem.ch_out_c, corrector.ch_in_memory, sim=sim)
+    connect(corrector.ch_out_memory, mem.ch_in_c, sim=sim)
+    connect(mem.ch_out_q, corrector.ch_in_q, sim=sim)
+    corrected = []
+    bind(corrector.ch_out_q, Handler(corrected.append))
+
+    first = Qubit(1, State(KET0.copy()), pair_id=10)
+    second = Qubit(2, State(KET0.copy()), pair_id=11)
+    for qubit in (first, second):
+        mem.ch_in_q.handle(qubit)
+        mem.ch_in_paired_memory.handle(PeerHerald(1, pair_id=qubit.pair_id))
+    sim.run(1)
+
+    corrector.ch_in_es.handle(BellOutcome("01", swap_id=11))
+    sim.run(2)
+    assert corrected == [second]
+    assert np.allclose(second.state.density_matrix, KET1)
+    assert np.allclose(first.state.density_matrix, KET0)
+
+    corrector.ch_in_es.handle(BellOutcome("00", swap_id=10))
+    sim.run(3)
+    assert corrected == [second, first]
+    assert corrector._in_flight == 0
