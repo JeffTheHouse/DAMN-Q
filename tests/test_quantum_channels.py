@@ -54,11 +54,13 @@ def test_x_basis_measurement_single_qubit_plus_state():
     reason="measure() accesses nonexistent State.density_operator and uses elementwise * instead of @.",
 )
 def test_x_basis_measurement_two_qubit_bell_state():
+    plus = 0.5 * np.array([[1.0, 1.0], [1.0, 1.0]], dtype=complex)
+    minus = 0.5 * np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=complex)
+
     q1, q2 = Qubit.bell_state(1, 2, State(phi_plus.copy()))
 
     out = measure(1, q1, x_basis_p=1.0)
 
     assert out.result in ("0", "1")
-    rho_post = q2.state.density_matrix
-    assert rho_post.shape == (2, 2)
-    assert np.isclose(np.trace(rho_post), 1.0)
+    expected_partner = plus if out.result == "0" else minus
+    assert np.allclose(q2.state.density_matrix, expected_partner)
