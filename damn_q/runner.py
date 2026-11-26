@@ -81,7 +81,7 @@ def _instantiate_component(comp_id, ctype, params, sim):
             sim=sim,
         )
     if ctype == "classic_data_reader":
-        return Classic_data_reader(comp_id)
+        return Classic_data_reader(comp_id, sim=sim)
     if ctype == "detector_module":
         return Detector_module(comp_id, trace=bool(params["trace"]), sim=sim)
     if ctype == "endpoint_probe":

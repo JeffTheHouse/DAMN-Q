@@ -26,11 +26,11 @@ class Measurer_memory_paired:
         self.p_depolarization= p_depolarization
         self.x_basis_p = x_basis_p
         self.sim = sim if sim is not None else scheduler
-        self.ch_in_q = Handler(self.handle_qubit)
-        self.ch_in_es = Handler(self.handle_es)
-        self.ch_in_memory_c = Handler(self.handle_memory_c)
-        self.ch_out_memory_c = Emitter()
-        self.ch_out_result = Emitter()
+        self.ch_in_q = Handler(self.handle_qubit, sim=self.sim)
+        self.ch_in_es = Handler(self.handle_es, sim=self.sim)
+        self.ch_in_memory_c = Handler(self.handle_memory_c, sim=self.sim)
+        self.ch_out_memory_c = Emitter(sim=self.sim)
+        self.ch_out_result = Emitter(sim=self.sim)
         self.id_generator_measurement = Id_generator()
         self._ready_slots = deque()
         self._pending_es = deque()

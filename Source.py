@@ -11,8 +11,8 @@ class Source:
         self.type = type
         self.sim = sim if sim is not None else scheduler
         self.id_generator = Id_generator()
-        self.out_ch_1 = Emitter()
-        self.out_ch_2 = Emitter()
+        self.out_ch_1 = Emitter(sim=self.sim)
+        self.out_ch_2 = Emitter(sim=self.sim)
 
         self.sim.add(self.delay, lambda:self.prepare())
 

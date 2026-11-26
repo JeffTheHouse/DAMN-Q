@@ -2,10 +2,11 @@ from Emitter import*
 from Qubits import*
 
 class Classic_data_reader:
-    def __init__(self, id):
+    def __init__(self, id, sim=None):
         self.id = id
-        self.input_1 = Handler(self.result_1)
-        self.input_2 = Handler(self.result_2)
+        self.sim = sim
+        self.input_1 = Handler(self.result_1, sim=self.sim)
+        self.input_2 = Handler(self.result_2, sim=self.sim)
         self.list_1 = []
         self.list_2 = []
         self.count_success = 0

@@ -11,8 +11,8 @@ class Measuring_Device:
         self.p_depolarization_depolarization= p_depolarization
         self.x_basis_p = x_basis_p
         self.sim = sim if sim is not None else scheduler
-        self.ch_in_q = Handler(self.handle)
-        self.ch_out_result = Emitter()
+        self.ch_in_q = Handler(self.handle, sim=self.sim)
+        self.ch_out_result = Emitter(sim=self.sim)
         self.id_generator_measurement = Id_generator()
         
 

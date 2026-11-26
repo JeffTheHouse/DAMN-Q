@@ -2,8 +2,10 @@ from pathlib import Path
 
 import numpy as np
 
+from Auto_connector import connect
 from Detector_module import Detector_module
 from Emitter import Handler, bind, scheduler
+from Measurer import Measuring_Device
 from Qubits import Qubit, State
 from Simulation import Simulation
 from Source import Source
@@ -93,3 +95,37 @@ def test_run_experiment_leaves_global_scheduler_untouched():
     result = run_experiment(ROOT / "experiments" / "repeater_ideal.json")
     assert (scheduler.time, len(scheduler._queue)) == before
     assert np.isclose(result["measurements"][0]["mean_fidelity"], 1.0, atol=1e-12)
+
+
+def test_connect_and_bind_reject_cross_simulation_wiring():
+    import pytest
+
+    sim_a = Simulation(seed=1)
+    sim_b = Simulation(seed=2)
+    src_a = Source(1, delay=5, type=1, sim=sim_a)
+    m_a = Measuring_Device(1, delay=0, sim=sim_a)
+    m_b = Measuring_Device(2, delay=0, sim=sim_b)
+    m_default = Measuring_Device(3, delay=0)
+
+    with pytest.raises(ValueError, match="different Simulation"):
+        connect(src_a.out_ch_1, m_b.ch_in_q)
+
+    with pytest.raises(ValueError, match="different Simulation"):
+        connect(src_a.out_ch_1, m_b.ch_in_q, sim=sim_a)
+
+    with pytest.raises(ValueError, match="different Simulation"):
+        connect(src_a.out_ch_1, m_a.ch_in_q, sim=sim_b)
+
+    with pytest.raises(ValueError, match="different Simulation"):
+        connect(src_a.out_ch_1, m_default.ch_in_q)
+
+    with pytest.raises(ValueError, match="different Simulation"):
+        bind(src_a.out_ch_1, m_b.ch_in_q)
+
+    # Same-simulation connect() without explicit sim= infers sim_a cleanly
+    results = []
+    connect(src_a.out_ch_1, m_a.ch_in_q, delay=1)
+    bind(m_a.ch_out_result, Handler(lambda r: results.append(r)))
+    sim_a.run(10)
+    assert len(results) == 1
+    assert sim_b._queue == []

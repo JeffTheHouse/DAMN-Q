@@ -10,10 +10,10 @@ class Entaglment_swapping_module:
         self.id = id
         self.delay = delay
         self.sim = sim if sim is not None else scheduler
-        self.ch_in_q_1 = Handler(self.handle_qubit_1)
-        self.ch_in_q_2 = Handler(self.handle_qubit_2)
-        self.ch_out_c_1 = Emitter()
-        self.ch_out_c_2 = Emitter()
+        self.ch_in_q_1 = Handler(self.handle_qubit_1, sim=self.sim)
+        self.ch_in_q_2 = Handler(self.handle_qubit_2, sim=self.sim)
+        self.ch_out_c_1 = Emitter(sim=self.sim)
+        self.ch_out_c_2 = Emitter(sim=self.sim)
         self.counter = 0
         self.qubit_1 = None
         self.qubit_2 = None
