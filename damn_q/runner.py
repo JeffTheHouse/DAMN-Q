@@ -22,6 +22,8 @@ from States import phi_plus
 from damn_q.manifest import get_component_spec
 from damn_q.schema import SCHEMA_VERSION, validate_experiment
 
+SIMULATOR_VERSION = "0.2.0"
+
 
 class EndpointProbe:
     """Captures arriving qubits for joint-state and fidelity inspection."""
@@ -201,6 +203,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
 
         return {
             "schema_version": SCHEMA_VERSION,
+            "simulator_version": SIMULATOR_VERSION,
             "name": doc.get("name", ""),
             "seed": seed,
             "until": until,

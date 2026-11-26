@@ -5,7 +5,7 @@ import json
 import sys
 
 from damn_q.manifest import COMPONENT_MANIFEST, MANIFEST_VERSION
-from damn_q.runner import load_experiment, run_experiment
+from damn_q.runner import SIMULATOR_VERSION, load_experiment, run_experiment
 from damn_q.schema import ExperimentValidationError, SCHEMA_VERSION, validate_experiment
 
 
@@ -38,6 +38,7 @@ def main(argv=None):
             json.dumps(
                 {
                     "schema_version": SCHEMA_VERSION,
+                    "simulator_version": SIMULATOR_VERSION,
                     "manifest_version": MANIFEST_VERSION,
                     "components": COMPONENT_MANIFEST,
                 },

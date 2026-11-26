@@ -34,6 +34,7 @@ def test_cli_ideal_repeater_produces_exact_phi_plus():
     )
     res = json.loads(proc.stdout)
     assert res["schema_version"] == "1.0"
+    assert isinstance(res["simulator_version"], str) and res["simulator_version"]
     assert len(res["measurements"]) == 1
     m = res["measurements"][0]
     assert m["pairs"] == 1
@@ -226,5 +227,54 @@ def test_cli_validate_and_manifest_commands():
     )
     payload = json.loads(man.stdout)
     assert payload["schema_version"] == "1.0"
+    assert isinstance(payload["simulator_version"], str) and payload["simulator_version"]
     assert "quantum_memory" in payload["components"]
     assert "entanglement_swapper" in payload["components"]
+
+
+def test_validator_rejects_quantum_fanout_nonfinite_horizon_duplicate_probe_and_unhashable_type():
+    # 1. Quantum fan-out from one quantum output port to two destinations
+    quantum_fanout = {
+        "schema_version": "1.0",
+        "run": {"until": 10},
+        "components": [
+            {"id": "s", "type": "source", "params": {"delay": 1}},
+            {"id": "p1", "type": "endpoint_probe"},
+            {"id": "p2", "type": "endpoint_probe"},
+        ],
+        "connections": [
+            {"from": {"component": "s", "port": "out_ch_1"}, "to": {"component": "p1", "port": "ch_in_q"}},
+            {"from": {"component": "s", "port": "out_ch_1"}, "to": {"component": "p2", "port": "ch_in_q"}},
+        ],
+    }
+    with pytest.raises(ExperimentValidationError, match="fans out quantum output port"):
+        validate_experiment(quantum_fanout)
+
+    # 2. Non-finite run horizon (inf / nan)
+    for bad_until in (float("inf"), float("nan")):
+        nonfinite = {
+            "schema_version": "1.0",
+            "run": {"until": bad_until},
+            "components": [{"id": "s", "type": "source", "params": {"delay": 1}}],
+        }
+        with pytest.raises(ExperimentValidationError, match="run.until"):
+            validate_experiment(nonfinite)
+
+    # 3. Bell-fidelity measurement referencing the same probe twice
+    dup_probe = {
+        "schema_version": "1.0",
+        "run": {"until": 10},
+        "components": [{"id": "p1", "type": "endpoint_probe"}],
+        "measurements": [{"type": "bell_fidelity", "probes": ["p1", "p1"]}],
+    }
+    with pytest.raises(ExperimentValidationError, match="two distinct endpoint probes"):
+        validate_experiment(dup_probe)
+
+    # 4. Unhashable (list-valued) component type raises ExperimentValidationError, not TypeError
+    list_type = {
+        "schema_version": "1.0",
+        "run": {"until": 10},
+        "components": [{"id": "bad", "type": ["source"]}],
+    }
+    with pytest.raises(ExperimentValidationError, match="must be a string"):
+        validate_experiment(list_type)

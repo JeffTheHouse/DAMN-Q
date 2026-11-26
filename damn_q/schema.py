@@ -1,5 +1,7 @@
 """Validation for DAMN-Q versioned JSON experiment graphs."""
 
+import math
+
 from damn_q.manifest import get_component_spec
 
 SCHEMA_VERSION = "1.0"
@@ -15,7 +17,7 @@ class ExperimentValidationError(ValueError):
 
 
 def _is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _is_integer(value):
@@ -81,6 +83,9 @@ def validate_experiment(doc):
             if cid in comp_map:
                 errors.append(f"Duplicate component id {cid!r}.")
                 continue
+            if not isinstance(ctype, str):
+                errors.append(f"Component {cid!r} type must be a string, got {ctype!r}.")
+                continue
             spec = get_component_spec(ctype)
             if spec is None:
                 errors.append(f"Component {cid!r} has unknown type {ctype!r}.")
@@ -98,6 +103,7 @@ def validate_experiment(doc):
                     _validate_param(cid, pname, pval, spec["parameters"][pname], errors)
 
     connections = doc.get("connections", [])
+    quantum_outputs_used = set()
     if not isinstance(connections, list):
         errors.append("'connections' must be a list.")
     else:
@@ -113,6 +119,12 @@ def validate_experiment(doc):
 
             src_cid, src_port = src.get("component"), src.get("port")
             dst_cid, dst_port = dst.get("component"), dst.get("port")
+            if not isinstance(src_cid, str) or not isinstance(src_port, str):
+                errors.append(f"connections[{idx}].from component and port must be strings.")
+                continue
+            if not isinstance(dst_cid, str) or not isinstance(dst_port, str):
+                errors.append(f"connections[{idx}].to component and port must be strings.")
+                continue
             src_info = comp_map.get(src_cid)
             dst_info = comp_map.get(dst_cid)
 
@@ -142,6 +154,15 @@ def validate_experiment(doc):
                     f"{src_cid}.{src_port} ({src_port_spec['kind']}) -> "
                     f"{dst_cid}.{dst_port} ({dst_port_spec['kind']})."
                 )
+            elif src_port_spec["kind"] == "quantum" and src_port_spec["direction"] == "out":
+                key = (src_cid, src_port)
+                if key in quantum_outputs_used:
+                    errors.append(
+                        f"connections[{idx}] fans out quantum output port {src_cid}.{src_port}; "
+                        f"a quantum connection must transfer ownership to a single destination."
+                    )
+                else:
+                    quantum_outputs_used.add(key)
 
             delay = conn.get("delay", 0)
             loss_p = conn.get("loss_p", 0.0)
@@ -170,6 +191,10 @@ def validate_experiment(doc):
                 probes = m.get("probes")
                 if not isinstance(probes, list) or len(probes) != 2:
                     errors.append(f"measurements[{idx}].probes must be a 2-element list of endpoint_probe IDs.")
+                elif not all(isinstance(pid, str) for pid in probes):
+                    errors.append(f"measurements[{idx}].probes entries must be strings.")
+                elif probes[0] == probes[1]:
+                    errors.append(f"measurements[{idx}].probes must reference two distinct endpoint probes.")
                 else:
                     for pid in probes:
                         info = comp_map.get(pid)
