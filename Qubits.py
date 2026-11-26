@@ -62,8 +62,14 @@ class Register:
         return int(round(np.log2(dim)))
 
     def attach(self, qubit):
-        if qubit not in self._qubits:
-            self._qubits.append(qubit)
+        if qubit in self._qubits:
+            qubit._register = self
+            return
+        if len(self._qubits) >= self.num_qubits:
+            raise ValueError(
+                f"Register already has {len(self._qubits)} qubit(s) for a {self.num_qubits}-qubit state."
+            )
+        self._qubits.append(qubit)
         qubit._register = self
 
     def index_of(self, qubit):
@@ -314,6 +320,11 @@ class Qubit:
     def state(self, value):
         if value is self._register:
             return
+        if isinstance(value, Register) and self not in value._qubits:
+            if len(value._qubits) >= value.num_qubits:
+                raise ValueError(
+                    f"Register already has {len(value._qubits)} qubit(s) for a {value.num_qubits}-qubit state."
+                )
         self._detach_from_register()
         if value is None:
             self._register = None

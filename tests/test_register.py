@@ -1,6 +1,7 @@
 import random
 
 import numpy as np
+import pytest
 
 from Measurment_module import measure
 from Operators import x_operator, z_operator
@@ -173,3 +174,22 @@ def test_clearing_qubit_state_traces_out_register():
     assert reg.qubits == (q1,)
     assert reg.num_qubits == 1
     assert np.allclose(reg.density_matrix, KET0)
+
+
+def test_assigning_to_full_register_raises_without_detaching():
+    rho_01 = np.kron(KET0, KET1)
+    orig_reg = State(rho_01)
+    q1, q2 = Qubit.bell_state(1, 2, orig_reg)
+
+    full_reg = State(KET0.copy())
+    q3 = Qubit(3, full_reg)
+
+    with pytest.raises(ValueError):
+        q2.state = full_reg
+
+    # q2 must remain intact in orig_reg, and full_reg must still hold only q3
+    assert q2.register is orig_reg
+    assert orig_reg.qubits == (q1, q2)
+    assert orig_reg.num_qubits == 2
+    assert np.allclose(orig_reg.density_matrix, rho_01)
+    assert full_reg.qubits == (q3,)
