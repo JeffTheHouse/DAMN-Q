@@ -293,17 +293,29 @@ class Qubit:
 
     @register.setter
     def register(self, reg):
-        self._register = reg
+        self.state = reg
 
     @property
     def state(self):
         return self._register
 
+    def _detach_from_register(self):
+        old = self._register
+        if isinstance(old, Register) and self in old._qubits:
+            if old.num_qubits == len(old._qubits):
+                old.trace_out(self)
+            else:
+                old._qubits.remove(self)
+                self._register = None
+        else:
+            self._register = None
+
     @state.setter
     def state(self, value):
+        if value is self._register:
+            return
+        self._detach_from_register()
         if value is None:
-            if isinstance(self._register, Register) and self in self._register._qubits:
-                self._register._qubits.remove(self)
             self._register = None
         elif isinstance(value, Register):
             value.attach(self)

@@ -143,3 +143,33 @@ def test_bell_measure_werner_swap_matches_analytic_fidelity():
             assert np.isclose(fidelity, expected_f, atol=1e-12)
     finally:
         random.setstate(rng_state)
+
+
+def test_reassigning_qubit_state_detaches_and_traces_out_old_register():
+    rho_01 = np.kron(KET0, KET1)
+    old_reg = State(rho_01)
+    q1, q2 = Qubit.bell_state(1, 2, old_reg)
+    new_reg = State(KET0.copy())
+
+    q2.state = new_reg
+
+    assert q2 not in old_reg.qubits
+    assert old_reg.qubits == (q1,)
+    assert old_reg.num_qubits == 1
+    assert np.allclose(old_reg.density_matrix, KET0)
+    assert q2.register is new_reg
+    assert new_reg.qubits == (q2,)
+
+
+def test_clearing_qubit_state_traces_out_register():
+    rho_01 = np.kron(KET0, KET1)
+    reg = State(rho_01)
+    q1, q2 = Qubit.bell_state(1, 2, reg)
+
+    q2.state = None
+
+    assert q2.state is None
+    assert q2.register is None
+    assert reg.qubits == (q1,)
+    assert reg.num_qubits == 1
+    assert np.allclose(reg.density_matrix, KET0)
