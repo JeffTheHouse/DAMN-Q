@@ -3,9 +3,17 @@ from Emitter import*
 from Measurment_module import*
 from Memory import*
 from Qubits import*
+from Signals import BellOutcome
 
 
 class Entaglment_swapping_module:
+    """Ideal projective Bell-state measurement (BSM) with explicit busy rejection.
+
+    Each input holds at most one waiting qubit. If a second qubit arrives on an
+    already-occupied side before the swap completes, the arriving qubit is
+    explicitly rejected (traced out) and `rejected_count` is incremented.
+    """
+
     def __init__(self, id, delay=0, sim=None):
         self.id = id
         self.delay = delay
@@ -15,6 +23,7 @@ class Entaglment_swapping_module:
         self.ch_out_c_1 = Emitter(sim=self.sim, kind="classical")
         self.ch_out_c_2 = Emitter(sim=self.sim, kind="classical")
         self.counter = 0
+        self.rejected_count = 0
         self.qubit_1 = None
         self.qubit_2 = None
         self.measurement_values = ["00", "01", "10", "11"]
@@ -23,21 +32,31 @@ class Entaglment_swapping_module:
         if self.qubit_1 is not None and self.qubit_2 is not None:
             q1, q2 = self.qubit_1, self.qubit_2
             self.qubit_1, self.qubit_2 = None, None
-            outcome, _ = Register.bell_measure(q1, q2, rng=self.sim.rng)
+            outcome, remaining_reg = Register.bell_measure(q1, q2, rng=self.sim.rng)
+            swap_id = self.sim.next_swap_id()
+            if remaining_reg is not None:
+                for ep in remaining_reg._qubits:
+                    ep.pair_id = swap_id
+            msg = BellOutcome(outcome, swap_id=swap_id)
             self.counter += 1
-            self.sim.add(self.delay, lambda msg=outcome: self.ch_out_c_1.emit(msg))
-            self.sim.add(self.delay, lambda msg=outcome: self.ch_out_c_2.emit(msg))
+            self.sim.add(self.delay, lambda m=msg: self.ch_out_c_1.emit(m))
+            self.sim.add(self.delay, lambda m=msg: self.ch_out_c_2.emit(m))
+
+    def _reject(self, qubit):
+        self.rejected_count += 1
+        if isinstance(qubit, Qubit) and qubit.state is not None:
+            qubit.state = None
 
     def handle_qubit_1(self, qubit):
         if self.qubit_1 is None and qubit.register is not None:
             self.qubit_1 = qubit
             self.entanglement_swap()
         else:
-            print("ERROR: Entanglement swapper is doublefed on a side")
+            self._reject(qubit)
 
     def handle_qubit_2(self, qubit):
         if self.qubit_2 is None and qubit.register is not None:
             self.qubit_2 = qubit
             self.entanglement_swap()
         else:
-            print("ERROR: Entanglement swapper is doublefed on a side")
+            self._reject(qubit)

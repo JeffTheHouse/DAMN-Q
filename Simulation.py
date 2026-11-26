@@ -36,6 +36,8 @@ class Simulation:
         self._time = 0
         self._counter = itertools.count()
         self._link_ids = itertools.count()
+        self._pair_ids = itertools.count(1)
+        self._swap_ids = itertools.count(1)
 
     @property
     def time(self):
@@ -43,6 +45,12 @@ class Simulation:
 
     def next_link_id(self):
         return next(self._link_ids)
+
+    def next_pair_id(self):
+        return next(self._pair_ids)
+
+    def next_swap_id(self):
+        return next(self._swap_ids)
 
     def add(self, delay, callback):
         if delay < 0:
@@ -90,4 +98,6 @@ class Simulation:
         self._time = 0
         self._counter = itertools.count()
         self._link_ids = itertools.count()
+        self._pair_ids = itertools.count(1)
+        self._swap_ids = itertools.count(1)
         self.rng = random.Random(self.seed)

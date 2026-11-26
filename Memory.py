@@ -55,6 +55,8 @@ class Quantum_memory:
         self.memory = {}
         self.temperory_memory = {}
         self.paired_memory_message = None
+        self.heralded_count = 0
+        self.evicted_count = 0
         self._pending_order = deque()
         self._confirmed_order = deque()
 
@@ -84,10 +86,12 @@ class Quantum_memory:
             # (absent from `self.memory`) so stale release requests are no-ops.
             _, evicted_qubit = self.memory.pop(oldest_confirmed)
             evicted_qubit.state = None
+            self.evicted_count += 1
         elif oldest_pending is not None:
             _, evicted_qubit = self.temperory_memory.pop(oldest_pending)
             evicted_qubit.state = None
             self._pending_order[oldest_pending_idx] = None
+            self.evicted_count += 1
 
     def handle_paired_memory(self, message):
         if not self._pending_order:
@@ -101,6 +105,7 @@ class Quantum_memory:
         if message == 1:
             self.memory[slot_id] = (arrival_time, qubit)
             self._confirmed_order.append(slot_id)
+            self.heralded_count += 1
             self.sim.add(0, lambda s=slot_id: self.ch_out_c.emit(Ready(s, memory_id=self.id)))
         else:
             qubit.state = None

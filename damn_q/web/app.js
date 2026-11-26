@@ -915,11 +915,21 @@
         const card = document.createElement("div");
         card.className = "result-card";
         const fStr = m.mean_fidelity === null ? "—" : String(m.mean_fidelity);
+        const latRow =
+          m.mean_latency != null
+            ? `<div class="metric-row"><span>Mean delivery latency</span><span>${m.mean_latency} ticks</span></div>`
+            : "";
+        const unmRow =
+          (m.unmatched_a || m.unmatched_b)
+            ? `<div class="metric-row"><span>Unmatched arrivals (A / B)</span><span>${m.unmatched_a} / ${m.unmatched_b}</span></div>`
+            : "";
         card.innerHTML = `
-          <h3>Mean simulated fidelity to |&Phi;<sup>+</sup>&rang; (run-end)</h3>
-          <div class="field-help">${escapeHtml(m.probes[0])} &harr; ${escapeHtml(m.probes[1])} (paired by arrival index)</div>
+          <h3>Conditional mean fidelity to |&Phi;<sup>+</sup>&rang; (at delivery)</h3>
+          <div class="field-help">${escapeHtml(m.probes[0])} &harr; ${escapeHtml(m.probes[1])} (matched by pair ID)</div>
           <div class="metric-big" data-testid="mean-fidelity">${escapeHtml(fStr)}</div>
-          <div class="metric-row"><span>Matched endpoint samples</span><span>${m.pairs}</span></div>
+          <div class="metric-row"><span>End-to-end pairs delivered</span><span>${m.pairs}</span></div>
+          ${latRow}
+          ${unmRow}
           <div class="metric-row diagnostic-row"><span>Diagnostic: shared register</span><span>${m.all_shared_register}</span></div>
         `;
         frag.appendChild(card);

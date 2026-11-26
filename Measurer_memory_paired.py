@@ -3,14 +3,14 @@ from collections import deque
 from Emitter import*
 from Measurment_module import*
 from Id_generator import*
-from Signals import enqueue_ready, release_request
+from Signals import MeasurementResult, enqueue_ready, release_request
 import numpy as np
 import random
 
 class Measurement_output:
     def __init__(self, id, measrument_result, es_result):
         self.id = id
-        self.measurment_result = measrument_result
+        self.measrument_result = measrument_result
         self.es_result = es_result
 
 class Measurer_memory_paired:
@@ -57,4 +57,10 @@ class Measurer_memory_paired:
     def handle_qubit(self, qubit):
         measurment_id = self.id_generator_measurement.generate()
         result = measure(measurment_id, qubit, self.x_basis_p, rng=self.sim.rng)
-        self.sim.add(self.delay, lambda: self.ch_out_result.emit(result.result))
+        out = MeasurementResult(
+            result.result,
+            pair_id=getattr(qubit, "pair_id", None),
+            basis=result.m_axis,
+            measurement_id=measurment_id,
+        )
+        self.sim.add(self.delay, lambda m=out: self.ch_out_result.emit(m))

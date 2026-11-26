@@ -1,13 +1,10 @@
-"""Slot-tagged control messages between memories and their controllers.
+"""Typed control and outcome messages between DAMN-Q components.
 
-A memory announces a confirmed slot with `Ready(slot_id, memory_id)`.
-A controller that wants that exact qubit replies with
-`Release(slot_id, memory_id)`. A memory ignores any `Release` whose
-`memory_id` is set and does not match its own `id`.
-
-Bare integers remain supported as the legacy untagged protocol: a bare `1`
-releases the oldest (FIFO) or newest (LIFO) confirmed slot on the receiving
-memory.
+- `Ready(slot_id, memory_id)`: memory announces a confirmed slot.
+- `Release(slot_id, memory_id)`: controller requests readout of that exact slot.
+- `BellOutcome(bits, swap_id)`: `str` subclass (`"00"`..`"11"`) carrying swap ID.
+- `MeasurementResult(bit, pair_id, basis, measurement_id)`: `str` subclass
+  (`"0"` or `"1"`) carrying pair identity and measurement basis.
 """
 
 from dataclasses import dataclass
@@ -24,6 +21,26 @@ class Ready:
 class Release:
     slot_id: int
     memory_id: Optional[Any] = None
+
+
+class BellOutcome(str):
+    """Classical Bell-state measurement outcome (`"00"`, `"01"`, `"10"`, `"11"`)."""
+
+    def __new__(cls, bits, swap_id=None):
+        obj = super().__new__(cls, bits)
+        obj.swap_id = swap_id
+        return obj
+
+
+class MeasurementResult(str):
+    """Classical single-qubit measurement outcome (`"0"` or `"1"`)."""
+
+    def __new__(cls, bit, pair_id=None, basis=None, measurement_id=None):
+        obj = super().__new__(cls, bit)
+        obj.pair_id = pair_id
+        obj.basis = basis
+        obj.measurement_id = measurement_id
+        return obj
 
 
 def enqueue_ready(queue, message):

@@ -300,8 +300,10 @@ class State(Register):
 
 
 class Qubit:
-    def __init__(self, id, state):
+    def __init__(self, id, state, pair_id=None, created_at=None):
         self.id = id
+        self.pair_id = pair_id
+        self.created_at = created_at
         self._register = None
         self.state = state
 
@@ -346,9 +348,9 @@ class Qubit:
             self._register = value
 
     @staticmethod
-    def bell_state(id_1, id_2, state):
-        qubit_1 = Qubit(id_1, state)
-        qubit_2 = Qubit(id_2, state)
+    def bell_state(id_1, id_2, state, pair_id=None, created_at=None):
+        qubit_1 = Qubit(id_1, state, pair_id=pair_id, created_at=created_at)
+        qubit_2 = Qubit(id_2, state, pair_id=pair_id, created_at=created_at)
         return (qubit_1, qubit_2)
 
     def depolarize(self, p):

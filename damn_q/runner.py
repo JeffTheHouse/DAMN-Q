@@ -26,16 +26,117 @@ SIMULATOR_VERSION = "0.2.0"
 
 
 class EndpointProbe:
-    """Captures arriving qubits for joint-state and fidelity inspection."""
+    """Captures arriving qubits and notifies delivery-time measurement recorders."""
 
     def __init__(self, id, sim):
         self.id = id
         self.sim = sim
         self.ch_in_q = Handler(self.handle_qubit, sim=self.sim, kind="quantum", max_connections=1)
         self.qubits = []
+        self._listeners = []
+
+    def add_listener(self, callback):
+        self._listeners.append(callback)
 
     def handle_qubit(self, qubit):
-        self.qubits.append((self.sim.time, qubit))
+        arrival_time = self.sim.time
+        self.qubits.append((arrival_time, qubit))
+        for cb in self._listeners:
+            cb(arrival_time, qubit)
+
+
+class _BellFidelityRecorder:
+    """Pairs arrivals across two EndpointProbes by `pair_id` and captures fidelity at delivery."""
+
+    def __init__(self, p1_id, p2_id, probe_a, probe_b):
+        self.p1_id = p1_id
+        self.p2_id = p2_id
+        self._pending_a = {}
+        self._pending_b = {}
+        self._untagged_a = []
+        self._untagged_b = []
+        self.fidelities = []
+        self.shared_register = []
+        self.delivery_times = []
+        self.latencies = []
+
+        probe_a.add_listener(self._on_a)
+        probe_b.add_listener(self._on_b)
+
+    def _capture(self, t_a, q1, t_b, q2):
+        delivery_time = max(t_a, t_b)
+        same_reg = (q1.register is not None) and (q1.register is q2.register)
+        if same_reg:
+            joint = q1.register.reduced_density_matrix([q1, q2])
+            f_val = float(np.real(np.trace(phi_plus @ joint)))
+        elif q1.register is not None and q2.register is not None:
+            joint = np.kron(
+                q1.register.reduced_density_matrix([q1]),
+                q2.register.reduced_density_matrix([q2]),
+            )
+            f_val = float(np.real(np.trace(phi_plus @ joint)))
+        else:
+            f_val = 0.0
+
+        self.shared_register.append(same_reg)
+        self.fidelities.append(f_val)
+        self.delivery_times.append(delivery_time)
+
+        c1 = getattr(q1, "created_at", None)
+        c2 = getattr(q2, "created_at", None)
+        if c1 is not None and c2 is not None:
+            self.latencies.append(delivery_time - min(c1, c2))
+        elif c1 is not None:
+            self.latencies.append(delivery_time - c1)
+        elif c2 is not None:
+            self.latencies.append(delivery_time - c2)
+
+    def _on_a(self, t, qubit):
+        pid = getattr(qubit, "pair_id", None)
+        if pid is not None:
+            if pid in self._pending_b:
+                t_b, q2 = self._pending_b.pop(pid)
+                self._capture(t, qubit, t_b, q2)
+            else:
+                self._pending_a[pid] = (t, qubit)
+            return
+        if self._untagged_b:
+            t_b, q2 = self._untagged_b.pop(0)
+            self._capture(t, qubit, t_b, q2)
+        else:
+            self._untagged_a.append((t, qubit))
+
+    def _on_b(self, t, qubit):
+        pid = getattr(qubit, "pair_id", None)
+        if pid is not None:
+            if pid in self._pending_a:
+                t_a, q1 = self._pending_a.pop(pid)
+                self._capture(t_a, q1, t, qubit)
+            else:
+                self._pending_b[pid] = (t, qubit)
+            return
+        if self._untagged_a:
+            t_a, q1 = self._untagged_a.pop(0)
+            self._capture(t_a, q1, t, qubit)
+        else:
+            self._untagged_b.append((t, qubit))
+
+    def to_dict(self):
+        n_pairs = len(self.fidelities)
+        return {
+            "type": "bell_fidelity",
+            "probes": [self.p1_id, self.p2_id],
+            "captured_at": "delivery",
+            "pairs": n_pairs,
+            "unmatched_a": len(self._pending_a) + len(self._untagged_a),
+            "unmatched_b": len(self._pending_b) + len(self._untagged_b),
+            "all_shared_register": all(self.shared_register) if self.shared_register else False,
+            "fidelities": self.fidelities,
+            "mean_fidelity": (sum(self.fidelities) / n_pairs) if n_pairs else None,
+            "delivery_times": self.delivery_times,
+            "latencies": self.latencies,
+            "mean_latency": (sum(self.latencies) / len(self.latencies)) if self.latencies else None,
+        }
 
 
 def _resolve_params(ctype, raw_params):
@@ -98,7 +199,8 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
     """Validate and execute a DAMN-Q experiment, returning a JSON-serializable result.
 
     Each call builds its own Simulation, so runs never share clock, queue,
-    random stream, or process-global state.
+    random stream, or process-global state. Bell fidelity probes pair arrivals
+    by `pair_id` and capture joint states at delivery time.
     """
     doc = load_experiment(doc_or_path) if isinstance(doc_or_path, (str, Path)) else dict(doc_or_path)
 
@@ -141,19 +243,47 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
             sim=sim,
         )
 
+    # Attach delivery-time Bell fidelity recorders before running the simulation
+    recorders = []
+    for m in doc.get("measurements", []):
+        if m["type"] == "bell_fidelity":
+            p1_id, p2_id = m["probes"]
+            recorders.append(_BellFidelityRecorder(p1_id, p2_id, instances[p1_id], instances[p2_id]))
+
     sim.run(until)
 
     readers = {}
     detectors = {}
     probes = {}
+    sources_metrics = {}
+    memories_metrics = {}
+    swappers_metrics = {}
+    readers_unmatched = {}
+
     for cid, obj in instances.items():
         ctype = types[cid]
-        if ctype == "classic_data_reader":
+        if ctype == "source":
+            sources_metrics[cid] = {"attempts": obj.attempts}
+        elif ctype == "quantum_memory":
+            memories_metrics[cid] = {
+                "heralded_pairs": obj.heralded_count,
+                "evicted": obj.evicted_count,
+            }
+        elif ctype == "entanglement_swapper":
+            swappers_metrics[cid] = {
+                "completed": obj.counter,
+                "rejected": obj.rejected_count,
+            }
+        elif ctype == "classic_data_reader":
             readers[cid] = {
                 "00": obj.count_00,
                 "01": obj.count_01,
                 "10": obj.count_10,
                 "11": obj.count_11,
+            }
+            readers_unmatched[cid] = {
+                "unmatched_1": obj.unmatched_1,
+                "unmatched_2": obj.unmatched_2,
             }
         elif ctype == "detector_module":
             detectors[cid] = {
@@ -167,43 +297,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         elif ctype == "endpoint_probe":
             probes[cid] = {"count": len(obj.qubits)}
 
-    measurements = []
-    for m in doc.get("measurements", []):
-        if m["type"] == "bell_fidelity":
-            p1_id, p2_id = m["probes"]
-            q_list_1 = instances[p1_id].qubits
-            q_list_2 = instances[p2_id].qubits
-            n_pairs = min(len(q_list_1), len(q_list_2))
-            fidelities = []
-            shared_register = []
-            for idx in range(n_pairs):
-                _, q1 = q_list_1[idx]
-                _, q2 = q_list_2[idx]
-                same_reg = (q1.register is not None) and (q1.register is q2.register)
-                shared_register.append(same_reg)
-                if same_reg:
-                    joint = q1.register.reduced_density_matrix([q1, q2])
-                    f_val = float(np.real(np.trace(phi_plus @ joint)))
-                elif q1.register is not None and q2.register is not None:
-                    joint = np.kron(
-                        q1.register.reduced_density_matrix([q1]),
-                        q2.register.reduced_density_matrix([q2]),
-                    )
-                    f_val = float(np.real(np.trace(phi_plus @ joint)))
-                else:
-                    f_val = 0.0
-                fidelities.append(f_val)
-
-            measurements.append(
-                {
-                    "type": "bell_fidelity",
-                    "probes": [p1_id, p2_id],
-                    "pairs": n_pairs,
-                    "all_shared_register": all(shared_register) if shared_register else False,
-                    "fidelities": fidelities,
-                    "mean_fidelity": (sum(fidelities) / len(fidelities)) if fidelities else None,
-                }
-            )
+    measurements = [rec.to_dict() for rec in recorders]
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -216,4 +310,10 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         "detectors": detectors,
         "probes": probes,
         "measurements": measurements,
+        "metrics": {
+            "sources": sources_metrics,
+            "memories": memories_metrics,
+            "swappers": swappers_metrics,
+            "readers_unmatched": readers_unmatched,
+        },
     }

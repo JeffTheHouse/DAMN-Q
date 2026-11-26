@@ -451,7 +451,7 @@ COMPONENT_MANIFEST = {
     "endpoint_probe": {
         "label": "Endpoint State Probe",
         "category": "diagnostics",
-        "model": "Retains arriving qubit handles for run-end density-matrix inspection",
+        "model": "Matches endpoint arrivals by pair ID and captures joint fidelity at delivery time",
         "version": "1.0",
         "ports": {
             "ch_in_q": {"direction": "in", "kind": "quantum", "label": "Qubit in", "max_connections": 1},

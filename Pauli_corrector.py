@@ -8,11 +8,12 @@ from Signals import enqueue_ready, release_request
 
 
 class Pauli_corrector:
-    """Applies the Pauli correction once the matching qubit and ES message meet.
+    """Applies the Pauli correction once the matching qubit and Bell outcome meet.
 
-    Each ES message needs one qubit from the memory. A release is only sent
-    when a readiness-announced slot is known, so requests are always tagged
-    with the exact slot and never consume a slot the corrector has not seen.
+    When both a pending qubit (`qubit.pair_id`) and a pending Bell outcome
+    (`message.swap_id`) carry IDs, they are matched by ID even if qubits and
+    classical outcomes arrive in different orders. Untagged legacy inputs fall
+    back to FIFO pairing.
     """
 
     def __init__(self, id, delay=0, sim=None):
@@ -60,10 +61,40 @@ class Pauli_corrector:
             self._in_flight += 1
             self.sim.add(0, lambda r=request: self.ch_out_memory.emit(r))
 
+    def _pop_matching_pair(self):
+        """Return `(qubit, message)` matched by swap/pair ID, or FIFO if untagged."""
+        if not self._pending_qubits or not self._pending_messages:
+            return None
+
+        # 1. Exact ID match: qubit.pair_id == message.swap_id
+        for q_idx, q in enumerate(self._pending_qubits):
+            q_pid = getattr(q, "pair_id", None)
+            if q_pid is None:
+                continue
+            for m_idx, m in enumerate(self._pending_messages):
+                if getattr(m, "swap_id", None) == q_pid:
+                    del self._pending_qubits[q_idx]
+                    del self._pending_messages[m_idx]
+                    return q, m
+
+        # 2. Legacy untagged fallback: only pair if either side lacks an ID
+        for q_idx, q in enumerate(self._pending_qubits):
+            q_pid = getattr(q, "pair_id", None)
+            for m_idx, m in enumerate(self._pending_messages):
+                m_sid = getattr(m, "swap_id", None)
+                if q_pid is None or m_sid is None:
+                    del self._pending_qubits[q_idx]
+                    del self._pending_messages[m_idx]
+                    return q, m
+
+        return None
+
     def _try_apply(self):
-        while self._pending_qubits and self._pending_messages:
-            qubit = self._pending_qubits.popleft()
-            message = self._pending_messages.popleft()
+        while True:
+            pair = self._pop_matching_pair()
+            if pair is None:
+                break
+            qubit, message = pair
             if qubit.register is not None:
                 if message[1] == "1":
                     qubit.apply_unitary(x_operator)

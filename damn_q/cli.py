@@ -87,10 +87,11 @@ def main(argv=None):
                 )
             for m in result["measurements"]:
                 if m["type"] == "bell_fidelity":
+                    lat_str = f", mean_latency={m['mean_latency']}" if m.get("mean_latency") is not None else ""
                     print(
-                        f"Mean simulated fidelity to |Phi+> (run-end) "
+                        f"Mean simulated fidelity to |Phi+> (at delivery) "
                         f"({m['probes'][0]}, {m['probes'][1]}): "
-                        f"matched_samples={m['pairs']}, mean_fidelity={m['mean_fidelity']} "
+                        f"delivered_pairs={m['pairs']}, mean_fidelity={m['mean_fidelity']}{lat_str} "
                         f"[diagnostic: shared_register={m['all_shared_register']}]"
                     )
         return 0
