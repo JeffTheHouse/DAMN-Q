@@ -109,3 +109,35 @@ def test_stress_gate_detects_latency_only_trace_mismatch(monkeypatch):
     report = sg.run_stress_gate(hops_list=(2,), hop_until=1000, dur_hops=2, dur_base=1000)
     assert report["trace_invariance"]["passed"] is False
     assert report["gate_passed"] is False
+
+
+def test_pyodide_worker_bootstrap_and_bundle_builder():
+    from pathlib import Path
+    from damn_q.web_bundle import build_pyodide_bundle
+
+    bundle = build_pyodide_bundle()
+    assert "Simulation.py" in bundle
+    assert "damn_q/manifest.py" in bundle
+    assert "damn_q/runner.py" in bundle
+    assert "damn_q/schema.py" in bundle
+
+    worker_js = Path("damn_q/web/pyodide_worker.js").read_text(encoding="utf-8")
+    start = worker_js.index("# --- DAMN_Q_WORKER_BOOTSTRAP_START ---")
+    end = worker_js.index("# --- DAMN_Q_WORKER_BOOTSTRAP_END ---")
+    py_code = worker_js[start:end]
+
+    ns = {}
+    exec(py_code, ns)
+
+    manifest = json.loads(ns["_worker_manifest"]())
+    assert "schema_version" in manifest
+    assert "manifest_version" in manifest
+    assert "components" in manifest
+    assert "channels" in manifest
+
+    exp = load_experiment("experiments/repeater_ideal.json")
+    val = json.loads(ns["_worker_validate"](json.dumps(exp)))
+    assert val["valid"] is True
+
+    res = json.loads(ns["_worker_run"](json.dumps(exp)))
+    assert np.isclose(res["measurements"][0]["mean_fidelity"], 1.0, atol=1e-12)
