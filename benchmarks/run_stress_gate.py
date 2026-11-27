@@ -93,6 +93,7 @@ def run_stress_gate(
         and tr_off["swaps_completed"] == tr_on["swaps_completed"]
         and tr_off["cutoff_expiries"] == tr_on["cutoff_expiries"]
         and abs(tr_off["fidelity"]["mean"] - tr_on["fidelity"]["mean"]) < 1e-12
+        and abs(tr_off["latency_ticks"]["mean"] - tr_on["latency_ticks"]["mean"]) < 1e-12
     )
 
     retention_passed = (

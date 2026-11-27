@@ -76,3 +76,36 @@ def test_stress_gate_cli_exits_nonzero_in_json_mode_on_failure(monkeypatch):
     }
     monkeypatch.setattr(sg, "run_stress_gate", lambda **kw: fake_fail)
     assert sg.main(["--json"]) == 1
+
+
+def test_stress_gate_detects_latency_only_trace_mismatch(monkeypatch):
+    import benchmarks.run_stress_gate as sg
+
+    base_row = {
+        "num_hops": 2,
+        "until_ticks": 1000,
+        "delivered_pairs": 5,
+        "attempts": 20,
+        "swaps_completed": 5,
+        "cutoff_expiries": 1,
+        "live_queue_len": 4,
+        "cancelled_queue_len": 0,
+        "fidelity": {"mean": 0.75},
+        "latency_ticks": {"mean": 200.0},
+        "peak_ram_kib": 100.0,
+        "process_peak_rss_mib": 25.0,
+        "wall_time_s": 0.1,
+        "profile": {"dominant": "registers"},
+    }
+
+    def fake_bench(*args, **kwargs):
+        row = dict(base_row)
+        row["latency_ticks"] = dict(base_row["latency_ticks"])
+        if kwargs.get("trace"):
+            row["latency_ticks"]["mean"] = 205.0
+        return {"rows": [row]}
+
+    monkeypatch.setattr(sg, "run_chain_scaling_benchmark", fake_bench)
+    report = sg.run_stress_gate(hops_list=(2,), hop_until=1000, dur_hops=2, dur_base=1000)
+    assert report["trace_invariance"]["passed"] is False
+    assert report["gate_passed"] is False

@@ -1,0 +1,96 @@
+/* Dedicated Web Worker for running DAMN-Q (Pyodide) off the main UI thread.
+ *
+ * Protocol (postMessage):
+ *   Request:  { id, action: "init" | "manifest" | "validate" | "run", payload }
+ *   Response: { id, ok: true, data } | { id, ok: false, error }
+ */
+
+let pyodideReady = null;
+let pyodide = null;
+
+async function ensurePyodide(config) {
+  if (pyodideReady) return pyodideReady;
+  pyodideReady = (async () => {
+    const indexURL = (config && config.pyodideIndexURL) || "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
+    importScripts(indexURL + "pyodide.js");
+    pyodide = await loadPyodide({ indexURL });
+    await pyodide.loadPackage(["numpy"]);
+
+    // Fetch and write DAMN-Q Python modules into the worker's virtual FS
+    const bundleUrl = (config && config.bundleUrl) || "./damn_q_bundle.json";
+    const resp = await fetch(bundleUrl);
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch DAMN-Q Python bundle from ${bundleUrl} (HTTP ${resp.status})`);
+    }
+    const files = await resp.json();
+    for (const [relPath, source] of Object.entries(files)) {
+      const parts = relPath.split("/");
+      let dir = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        dir += (dir ? "/" : "") + parts[i];
+        try {
+          pyodide.FS.mkdir(dir);
+        } catch (_) {
+          // Directory already exists
+        }
+      }
+      pyodide.FS.writeFile(relPath, source);
+    }
+
+    pyodide.runPython(`
+import json
+from damn_q.manifest import build_manifest
+from damn_q.schema import validate_experiment, ExperimentValidationError
+from damn_q.runner import run_experiment
+
+def _worker_manifest():
+    return json.dumps(build_manifest())
+
+def _worker_validate(exp_json):
+    exp = json.loads(exp_json)
+    try:
+        validate_experiment(exp)
+        return json.dumps({"valid": True, "errors": []})
+    except ExperimentValidationError as exc:
+        return json.dumps({"valid": False, "errors": [str(exc)]})
+
+def _worker_run(exp_json):
+    exp = json.loads(exp_json)
+    res = run_experiment(exp)
+    return json.dumps(res)
+`);
+    return pyodide;
+  })();
+  return pyodideReady;
+}
+
+self.onmessage = async (event) => {
+  const { id, action, payload } = event.data || {};
+  try {
+    await ensurePyodide(payload && payload.config);
+    if (action === "init") {
+      self.postMessage({ id, ok: true, data: { ready: true } });
+      return;
+    }
+    if (action === "manifest") {
+      const raw = pyodide.runPython("_worker_manifest()");
+      self.postMessage({ id, ok: true, data: JSON.parse(raw) });
+      return;
+    }
+    if (action === "validate") {
+      pyodide.globals.set("_req_json", JSON.stringify(payload.experiment));
+      const raw = pyodide.runPython("_worker_validate(_req_json)");
+      self.postMessage({ id, ok: true, data: JSON.parse(raw) });
+      return;
+    }
+    if (action === "run") {
+      pyodide.globals.set("_req_json", JSON.stringify(payload.experiment));
+      const raw = pyodide.runPython("_worker_run(_req_json)");
+      self.postMessage({ id, ok: true, data: JSON.parse(raw) });
+      return;
+    }
+    throw new Error(`Unknown worker action: ${action}`);
+  } catch (err) {
+    self.postMessage({ id, ok: false, error: err ? String(err.message || err) : "Worker error" });
+  }
+};
