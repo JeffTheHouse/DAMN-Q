@@ -10,6 +10,7 @@ import ctypes
 import gc
 import json
 import os
+import subprocess
 import sys
 import tracemalloc
 from pathlib import Path
@@ -61,6 +62,41 @@ def _process_peak_rss_mib():
         return 0.0
 
 
+def _run_single_hop_in_process(
+    n_hops,
+    *,
+    until,
+    seed,
+    memory_cutoff,
+    loss_p,
+    channel_depolarization_p,
+    memory_depolarization_p,
+    trace,
+):
+    cfg = ChainConfig(
+        num_hops=n_hops,
+        until=until,
+        seed=seed,
+        loss_p=loss_p,
+        channel_depolarization_p=channel_depolarization_p,
+        memory_depolarization_p=memory_depolarization_p,
+        memory_cutoff=memory_cutoff,
+        trace=trace,
+        profile=True,
+    )
+    gc.collect()
+    tracemalloc.start()
+    try:
+        res = run_repeater_chain(cfg)
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    res["peak_ram_kib"] = peak_bytes / 1024.0
+    res["process_peak_rss_mib"] = _process_peak_rss_mib()
+    return res
+
+
 def run_chain_scaling_benchmark(
     hops_list=(1, 2, 4, 8),
     *,
@@ -71,37 +107,50 @@ def run_chain_scaling_benchmark(
     channel_depolarization_p=0.005,
     memory_depolarization_p=0.0005,
     trace=False,
+    isolate_processes=True,
 ):
     rows = []
     for n_hops in hops_list:
-        cfg = ChainConfig(
-            num_hops=n_hops,
-            until=until,
-            seed=seed,
-            loss_p=loss_p,
-            channel_depolarization_p=channel_depolarization_p,
-            memory_depolarization_p=memory_depolarization_p,
-            memory_cutoff=memory_cutoff,
-            trace=trace,
-            profile=True,
-        )
-        gc.collect()
-        tracemalloc.start()
-        try:
-            res = run_repeater_chain(cfg)
-            _, peak_bytes = tracemalloc.get_traced_memory()
-        finally:
-            tracemalloc.stop()
-
-        res["peak_ram_kib"] = peak_bytes / 1024.0
-        res["process_peak_rss_mib"] = _process_peak_rss_mib()
-        rows.append(res)
+        if isolate_processes:
+            cmd = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--hops",
+                str(n_hops),
+                "--until",
+                str(until),
+                "--seed",
+                str(seed),
+                "--cutoff",
+                str(memory_cutoff),
+                "--in-process",
+                "--json",
+            ]
+            if trace:
+                cmd.append("--trace")
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            sub_report = json.loads(proc.stdout)
+            rows.append(sub_report["rows"][0])
+        else:
+            rows.append(
+                _run_single_hop_in_process(
+                    n_hops,
+                    until=until,
+                    seed=seed,
+                    memory_cutoff=memory_cutoff,
+                    loss_p=loss_p,
+                    channel_depolarization_p=channel_depolarization_p,
+                    memory_depolarization_p=memory_depolarization_p,
+                    trace=trace,
+                )
+            )
 
     return {
         "until_ticks": until,
         "seed": seed,
         "memory_cutoff": memory_cutoff,
         "trace": trace,
+        "isolate_processes": isolate_processes,
         "rows": rows,
     }
 
@@ -113,6 +162,11 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=101, help="RNG seed (default: 101).")
     parser.add_argument("--cutoff", type=float, default=0.0, help="Memory cutoff in ticks (0 = none).")
     parser.add_argument("--trace", action="store_true", help="Retain full sample traces instead of O(1) streaming.")
+    parser.add_argument(
+        "--in-process",
+        action="store_true",
+        help="Run all hop counts in the current process instead of one fresh subprocess per hop count.",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable JSON.")
     args = parser.parse_args(argv)
 
@@ -126,6 +180,7 @@ def main(argv=None):
         seed=args.seed,
         memory_cutoff=args.cutoff,
         trace=args.trace,
+        isolate_processes=not args.in_process,
     )
 
     if args.as_json:

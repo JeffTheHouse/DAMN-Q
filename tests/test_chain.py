@@ -174,11 +174,53 @@ def test_cancelled_cutoff_events_do_not_accumulate_with_horizon():
     assert cancelled_long < 64
 
 
+def test_cutoff_exact_boundary_is_consistent_across_1hop_and_2hop():
+    """At exact boundary (storage age == memory_cutoff), both 1-hop and 2-hop expire the pair."""
+    # 1-hop: arrival at t0 + 50, herald/delivery at t0 + 101 -> storage age = 51 ticks.
+    res_1hop = run_repeater_chain(
+        ChainConfig(
+            num_hops=1,
+            until=1000,
+            seed=101,
+            attempt_period=200,
+            link_delay=50,
+            swap_delay=1,
+            loss_p=0.0,
+            channel_depolarization_p=0.0,
+            memory_depolarization_p=0.0,
+            memory_cutoff=51.0,
+        )
+    )
+    # 2-hop: arrival at t0 + 50, delivery at t0 + 152 -> storage age = 102 ticks.
+    res_2hop = run_repeater_chain(
+        ChainConfig(
+            num_hops=2,
+            until=1000,
+            seed=101,
+            attempt_period=200,
+            link_delay=50,
+            swap_delay=1,
+            loss_p=0.0,
+            channel_depolarization_p=0.0,
+            memory_depolarization_p=0.0,
+            memory_cutoff=102.0,
+        )
+    )
+    assert res_1hop["delivered_pairs"] == 0
+    assert res_1hop["cutoff_expiries"] > 0
+    assert res_2hop["delivered_pairs"] == 0
+    assert res_2hop["cutoff_expiries"] > 0
+
+
 @pytest.mark.parametrize(
     "bad_kwargs",
     [
         {"attempt_period": 0},
         {"attempt_period": -10},
+        {"attempt_period": float("nan")},
+        {"attempt_period": float("inf")},
+        {"until": float("inf")},
+        {"memory_cutoff": float("nan")},
         {"link_delay": -1},
         {"swap_delay": -1},
         {"tick_duration_s": 0},

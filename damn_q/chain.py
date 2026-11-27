@@ -17,6 +17,7 @@ event queue. Supports:
 """
 
 from dataclasses import dataclass
+import math
 import time
 import numpy as np
 
@@ -101,6 +102,20 @@ class RepeaterChain:
     def __init__(self, config: ChainConfig):
         if config.num_hops < 1:
             raise ValueError(f"num_hops must be >= 1, got {config.num_hops}")
+        for name in (
+            "until",
+            "tick_duration_s",
+            "attempt_period",
+            "link_delay",
+            "swap_delay",
+            "memory_cutoff",
+            "loss_p",
+            "channel_depolarization_p",
+            "memory_depolarization_p",
+        ):
+            val = getattr(config, name)
+            if not math.isfinite(val):
+                raise ValueError(f"{name} must be finite, got {val}")
         if config.until <= 0:
             raise ValueError(f"until must be > 0, got {config.until}")
         if config.tick_duration_s <= 0:
@@ -348,7 +363,7 @@ class RepeaterChain:
             return
         if self.cfg.memory_cutoff > 0.0:
             oldest_age = self.sim.time - min(seg.left_arrival, seg.right_arrival)
-            if oldest_age > self.cfg.memory_cutoff:
+            if oldest_age >= self.cfg.memory_cutoff:
                 self._discard_segment(seg, expired=True)
                 return
         seg.alive = False
