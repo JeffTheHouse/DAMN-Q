@@ -92,6 +92,9 @@ def validate_experiment(doc):
         seed = run_cfg.get("seed")
         if seed is not None and not _is_integer(seed):
             errors.append(f"'run.seed' must be an integer or null, got {seed!r}.")
+        tick_s = run_cfg.get("tick_duration_s")
+        if tick_s is not None and (not _is_number(tick_s) or tick_s <= 0):
+            errors.append(f"'run.tick_duration_s' must be a positive number or null, got {tick_s!r}.")
 
     components = doc.get("components")
     comp_map = {}

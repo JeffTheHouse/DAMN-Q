@@ -121,9 +121,9 @@ class _BellFidelityRecorder:
         else:
             self._untagged_b.append((t, qubit))
 
-    def to_dict(self):
+    def to_dict(self, *, final_time=None, tick_duration_s=None):
         n_pairs = len(self.fidelities)
-        return {
+        out = {
             "type": "bell_fidelity",
             "probes": [self.p1_id, self.p2_id],
             "captured_at": "delivery",
@@ -137,6 +137,15 @@ class _BellFidelityRecorder:
             "latencies": self.latencies,
             "mean_latency": (sum(self.latencies) / len(self.latencies)) if self.latencies else None,
         }
+        if tick_duration_s is not None:
+            sim_s = (final_time * tick_duration_s) if final_time is not None else None
+            out["delivered_pairs_per_s"] = (n_pairs / sim_s) if (sim_s and sim_s > 0) else None
+            out["mean_latency_s"] = (
+                out["mean_latency"] * tick_duration_s
+                if out["mean_latency"] is not None
+                else None
+            )
+        return out
 
 
 def _resolve_params(ctype, raw_params):
@@ -224,6 +233,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
 
     until = doc["run"]["until"]
     seed = doc["run"].get("seed")
+    tick_duration_s = doc["run"].get("tick_duration_s")
     sim = Simulation(seed)
 
     instances = {}
@@ -305,9 +315,12 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         elif ctype == "endpoint_probe":
             probes[cid] = {"count": len(obj.qubits)}
 
-    measurements = [rec.to_dict() for rec in recorders]
+    measurements = [
+        rec.to_dict(final_time=sim.time, tick_duration_s=tick_duration_s)
+        for rec in recorders
+    ]
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "simulator_version": SIMULATOR_VERSION,
         "name": doc.get("name", ""),
@@ -325,3 +338,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
             "readers_unmatched": readers_unmatched,
         },
     }
+    if tick_duration_s is not None:
+        result["tick_duration_s"] = tick_duration_s
+        result["simulated_duration_s"] = sim.time * tick_duration_s
+    return result
