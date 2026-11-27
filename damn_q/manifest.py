@@ -25,8 +25,8 @@ CHANNEL_MANIFEST = {
                 "label": "Pauli error probability per transmission",
                 "unit": "[0, 1]",
                 "description": (
-                    "Total probability p of applying X, Y, or Z (p/3 each); "
-                    "maximally mixed weight is 4p/3."
+                    "Total probability p of applying X, Y, or Z (each with probability p/3; "
+                    "no error with probability 1 - p)."
                 ),
             },
         },
@@ -122,8 +122,8 @@ COMPONENT_MANIFEST = {
                 "label": "Storage Pauli error probability per tick",
                 "unit": "[0, 1]",
                 "description": (
-                    "Total probability p of applying X, Y, or Z per simulation tick (p/3 each); "
-                    "maximally mixed weight per tick is 4p/3."
+                    "Total probability p of applying X, Y, or Z per simulation tick "
+                    "(each with probability p/3; no error with probability 1 - p)."
                 ),
             },
             "delay": {
@@ -352,7 +352,7 @@ COMPONENT_MANIFEST = {
                 "unit": "[0, 1]",
                 "description": (
                     "Local single-qubit Pauli depolarization p applied immediately before "
-                    "projective measurement (X, Y, Z each with p/3; maximally mixed weight 4p/3)."
+                    "projective measurement (X, Y, Z each with probability p/3; no error with probability 1 - p)."
                 ),
             },
         },
@@ -423,7 +423,7 @@ COMPONENT_MANIFEST = {
                 "unit": "[0, 1]",
                 "description": (
                     "Local single-qubit Pauli depolarization p applied immediately before "
-                    "projective measurement (X, Y, Z each with p/3; maximally mixed weight 4p/3)."
+                    "projective measurement (X, Y, Z each with probability p/3; no error with probability 1 - p)."
                 ),
             },
         },

@@ -170,7 +170,8 @@ def test_manifest_exposes_terminology_channels_and_hides_inactive_controls(workb
     # Channels metadata present with Pauli error convention
     assert "quantum" in man["channels"] and "classical" in man["channels"]
     assert man["channels"]["quantum"]["label"] == "Quantum Channel"
-    assert "4p/3" in man["channels"]["quantum"]["parameters"]["depolarization_p"]["description"]
+    assert "p/3" in man["channels"]["quantum"]["parameters"]["depolarization_p"]["description"]
+    assert "maximally mixed weight" not in man["channels"]["quantum"]["parameters"]["depolarization_p"]["description"]
 
     comps = man["components"]
     assert comps["entanglement_swapper"]["label"] == "Bell-State Measurement (BSM)"

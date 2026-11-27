@@ -51,7 +51,7 @@ Connections model either a **Quantum Channel** (`delay`, `loss_p`, `depolarizati
 ### Noise and timing conventions
 
 - **Time units:** all delays and horizons are in **simulation ticks**.
-- **Pauli depolarization (`depolarization_p`):** total probability \(p\) of applying \(X\), \(Y\), or \(Z\) (\(p/3\) each), corresponding to a maximally mixed weight of \(4p/3\): \(\mathcal{E}(\rho) = (1 - p)\rho + \frac{p}{3}(X\rho X + Y\rho Y + Z\rho Z)\).
+- **Pauli depolarization (`depolarization_p`):** total probability \(p\) of applying \(X\), \(Y\), or \(Z\) (each with probability \(p/3\); no error with probability \(1 - p\)): \(\mathcal{E}(\rho) = (1 - p)\rho + \frac{p}{3}(X\rho X + Y\rho Y + Z\rho Z)\).
 - **Operation time vs. output latency:** Bell-State Measurement, Qubit Measurement, and Pauli Feed-Forward apply their quantum operation immediately on arrival and delay only the emitted classical outcome or corrected qubit.
 
 ## Built-in experiments
