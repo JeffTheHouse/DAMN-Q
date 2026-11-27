@@ -123,6 +123,12 @@ def run_chain_scaling_benchmark(
                 str(seed),
                 "--cutoff",
                 str(memory_cutoff),
+                "--loss-p",
+                repr(loss_p),
+                "--channel-depolarization-p",
+                repr(channel_depolarization_p),
+                "--memory-depolarization-p",
+                repr(memory_depolarization_p),
                 "--in-process",
                 "--json",
             ]
@@ -161,6 +167,19 @@ def main(argv=None):
     parser.add_argument("--until", type=int, default=40000, help="Simulation horizon in ticks (default: 40000).")
     parser.add_argument("--seed", type=int, default=101, help="RNG seed (default: 101).")
     parser.add_argument("--cutoff", type=float, default=0.0, help="Memory cutoff in ticks (0 = none).")
+    parser.add_argument("--loss-p", type=float, default=0.2, help="Per-photon channel loss probability (default: 0.2).")
+    parser.add_argument(
+        "--channel-depolarization-p",
+        type=float,
+        default=0.005,
+        help="Per-qubit channel depolarization probability (default: 0.005).",
+    )
+    parser.add_argument(
+        "--memory-depolarization-p",
+        type=float,
+        default=0.0005,
+        help="Per-tick memory depolarization probability (default: 0.0005).",
+    )
     parser.add_argument("--trace", action="store_true", help="Retain full sample traces instead of O(1) streaming.")
     parser.add_argument(
         "--in-process",
@@ -179,6 +198,9 @@ def main(argv=None):
         until=args.until,
         seed=args.seed,
         memory_cutoff=args.cutoff,
+        loss_p=args.loss_p,
+        channel_depolarization_p=args.channel_depolarization_p,
+        memory_depolarization_p=args.memory_depolarization_p,
         trace=args.trace,
         isolate_processes=not args.in_process,
     )

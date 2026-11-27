@@ -212,6 +212,30 @@ def test_cutoff_exact_boundary_is_consistent_across_1hop_and_2hop():
     assert res_2hop["cutoff_expiries"] > 0
 
 
+def test_chain_scaling_benchmark_isolated_matches_in_process_with_custom_noise():
+    kwargs = dict(
+        hops_list=(2,),
+        until=4000,
+        seed=101,
+        memory_cutoff=0.0,
+        loss_p=0.1,
+        channel_depolarization_p=0.75,
+        memory_depolarization_p=0.5,
+    )
+    iso = run_chain_scaling_benchmark(**kwargs, isolate_processes=True)["rows"][0]
+    inp = run_chain_scaling_benchmark(**kwargs, isolate_processes=False)["rows"][0]
+    assert iso["delivered_pairs"] == inp["delivered_pairs"]
+    assert iso["attempts"] == inp["attempts"]
+    assert iso["swaps_completed"] == inp["swaps_completed"]
+    assert np.isclose(iso["fidelity"]["mean"], inp["fidelity"]["mean"], atol=1e-12)
+    assert np.isclose(iso["latency_ticks"]["mean"], inp["latency_ticks"]["mean"], atol=1e-12)
+
+    iso_loss1 = run_chain_scaling_benchmark(
+        hops_list=(2,), until=4000, seed=101, loss_p=1.0, isolate_processes=True
+    )["rows"][0]
+    assert iso_loss1["delivered_pairs"] == 0
+
+
 @pytest.mark.parametrize(
     "bad_kwargs",
     [
