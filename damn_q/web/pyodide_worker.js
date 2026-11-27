@@ -57,9 +57,9 @@ def _worker_validate(exp_json):
     exp = json.loads(exp_json)
     try:
         validate_experiment(exp)
-        return json.dumps({"ok": True, "valid": True, "errors": []})
+        return json.dumps({"ok": True, "valid": True, "schema_version": SCHEMA_VERSION, "errors": []})
     except ExperimentValidationError as exc:
-        return json.dumps({"ok": False, "valid": False, "errors": [str(exc)]})
+        return json.dumps({"ok": False, "valid": False, "schema_version": SCHEMA_VERSION, "errors": [str(exc)]})
 
 def _worker_run(exp_json):
     exp = json.loads(exp_json)

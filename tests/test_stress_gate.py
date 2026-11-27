@@ -143,7 +143,7 @@ def test_pyodide_worker_bootstrap_and_bundle_builder(tmp_path):
         + f"m = json.loads(_worker_manifest())\n"
         + f"assert 'schema_version' in m and 'components' in m and 'channels' in m\n"
         + f"v = json.loads(_worker_validate({exp_ideal!r}))\n"
-        + f"assert v['valid'] is True\n"
+        + f"assert v['valid'] is True and v['schema_version'] == m['schema_version']\n"
         + f"r1 = json.loads(_worker_run({exp_ideal!r}))\n"
         + f"assert abs(r1['measurements'][0]['mean_fidelity'] - 1.0) < 1e-12\n"
         + f"r2 = json.loads(_worker_run({exp_tut!r}))\n"
