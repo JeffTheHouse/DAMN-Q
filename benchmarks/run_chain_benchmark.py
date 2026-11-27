@@ -6,8 +6,10 @@ Usage:
 """
 
 import argparse
+import ctypes
 import gc
 import json
+import os
 import sys
 import tracemalloc
 from pathlib import Path
@@ -17,6 +19,46 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from damn_q.chain import ChainConfig, run_repeater_chain
+
+
+def _process_peak_rss_mib():
+    """Return process peak resident set size in MiB (Windows & POSIX)."""
+    if os.name == "nt":
+        class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        pmc = PROCESS_MEMORY_COUNTERS()
+        pmc.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+        k32 = ctypes.windll.kernel32
+        k32.GetCurrentProcess.restype = ctypes.c_void_p
+        psapi = ctypes.windll.psapi
+        psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+        handle = k32.GetCurrentProcess()
+        if psapi.GetProcessMemoryInfo(handle, ctypes.byref(pmc), pmc.cb):
+            return pmc.PeakWorkingSetSize / (1024.0 * 1024.0)
+        return 0.0
+    try:
+        import resource
+
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # macOS returns bytes; Linux returns KiB
+        if sys.platform == "darwin":
+            return usage / (1024.0 * 1024.0)
+        return usage / 1024.0
+    except Exception:
+        return 0.0
 
 
 def run_chain_scaling_benchmark(
@@ -52,6 +94,7 @@ def run_chain_scaling_benchmark(
             tracemalloc.stop()
 
         res["peak_ram_kib"] = peak_bytes / 1024.0
+        res["process_peak_rss_mib"] = _process_peak_rss_mib()
         rows.append(res)
 
     return {
@@ -95,16 +138,16 @@ def main(argv=None):
     )
     print(
         f"{'Hops':>4} | {'Pairs/s':>9} | {'Mean F':>8} | {'Cutoffs':>7} | "
-        f"{'Wall (s)':>8} | {'Peak KiB':>9} | {'Dominant':>11}"
+        f"{'Wall (s)':>8} | {'Peak KiB':>9} | {'Proc MiB':>8} | {'Dominant':>11}"
     )
-    print("-" * 74)
+    print("-" * 85)
     for r in report["rows"]:
         f_mean = r["fidelity"]["mean"] if r["fidelity"] else float("nan")
         dom = r["profile"]["dominant"]
         print(
             f"{r['num_hops']:>4} | {r['delivered_pairs_per_s']:>9.1f} | {f_mean:>8.4f} | "
             f"{r['cutoff_expiries']:>7} | {r['wall_time_s']:>8.3f} | "
-            f"{r['peak_ram_kib']:>9.1f} | {dom:>11}"
+            f"{r['peak_ram_kib']:>9.1f} | {r['process_peak_rss_mib']:>8.1f} | {dom:>11}"
         )
     return 0
 

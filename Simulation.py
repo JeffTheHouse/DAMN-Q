@@ -33,6 +33,7 @@ class Simulation:
         self.seed = seed
         self.rng = random.Random(seed)
         self._queue = []
+        self._cancelled_count = 0
         self._time = 0
         self._counter = itertools.count()
         self._link_ids = itertools.count()
@@ -68,11 +69,19 @@ class Simulation:
     def cancel(self, handle):
         if getattr(handle, "_owner", None) is not self:
             raise ValueError("EventHandle does not belong to this Simulation.")
-        handle.cancel()
+        if not handle.cancelled:
+            handle.cancel()
+            self._cancelled_count += 1
+            if self._cancelled_count >= 32 and self._cancelled_count * 2 >= len(self._queue):
+                self._queue = [entry for entry in self._queue if not entry[2].cancelled]
+                heapq.heapify(self._queue)
+                self._cancelled_count = 0
 
     def _discard_cancelled(self):
         while self._queue and self._queue[0][2].cancelled:
             heapq.heappop(self._queue)
+            if self._cancelled_count > 0:
+                self._cancelled_count -= 1
 
     def step(self, until=None):
         """Execute the next non-cancelled event if within `until`.
@@ -99,6 +108,7 @@ class Simulation:
     def reset(self):
         """Return the run to its initial state, including the random stream."""
         self._queue = []
+        self._cancelled_count = 0
         self._time = 0
         self._counter = itertools.count()
         self._link_ids = itertools.count()

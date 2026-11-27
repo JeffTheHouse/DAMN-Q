@@ -86,4 +86,107 @@ def test_chain_scaling_benchmark_reports_wall_time_peak_ram_and_dominant_phase()
     for row in report["rows"]:
         assert row["wall_time_s"] >= 0.0
         assert row["peak_ram_kib"] > 0.0
+        assert row["process_peak_rss_mib"] > 0.0
         assert row["profile"]["dominant"] in ("registers", "events", "diagnostics")
+
+
+def test_intermediate_swaps_wait_for_classical_notification_delay():
+    """In a lossless 4-hop chain, downstream swap at node 2 must wait for swap_delay + link_delay."""
+    from damn_q.chain import RepeaterChain
+
+    cfg = ChainConfig(
+        num_hops=4,
+        until=1000,
+        seed=1,
+        attempt_period=200,
+        link_delay=50,
+        swap_delay=100,
+        loss_p=0.0,
+        channel_depolarization_p=0.0,
+        memory_depolarization_p=0.0,
+        memory_cutoff=0.0,
+    )
+    chain = RepeaterChain(cfg)
+    swap_times = []
+    orig_try_swap = chain._try_swap
+
+    def _recording_try_swap(node):
+        before = chain.swaps_completed
+        orig_try_swap(node)
+        if chain.swaps_completed > before:
+            swap_times.append((node, chain.sim.time))
+
+    chain._try_swap = _recording_try_swap
+    res = chain.run()
+    assert res["delivered_pairs"] >= 1
+    # First wave: elementary heralds arrive at t = 200 + 50 + 1 + 50 = 301.
+    # Nodes 1 and 3 swap at t = 301; node 2 must wait swap_delay (100) + 1 * link_delay (50) = 150 -> t = 451.
+    first_wave = swap_times[:3]
+    assert {n for n, _ in first_wave} == {1, 2, 3}
+    by_node = dict(first_wave)
+    assert by_node[1] == 301
+    assert by_node[3] == 301
+    assert by_node[2] == 451
+
+
+def test_cutoff_applies_through_delivery():
+    """A lossless 2-hop chain with 75-tick cutoff must NOT deliver pairs stored for 102 ticks."""
+    cfg = ChainConfig(
+        num_hops=2,
+        until=2000,
+        seed=101,
+        attempt_period=200,
+        link_delay=50,
+        swap_delay=1,
+        loss_p=0.0,
+        channel_depolarization_p=0.0,
+        memory_depolarization_p=0.0,
+        memory_cutoff=75.0,
+    )
+    res = run_repeater_chain(cfg)
+    assert res["delivered_pairs"] == 0
+    assert res["cutoff_expiries"] > 0
+
+
+def test_cancelled_cutoff_events_do_not_accumulate_with_horizon():
+    """Cancelled cutoff handles are compacted so queue size stays bounded over long horizons."""
+    from damn_q.chain import RepeaterChain
+
+    base = dict(
+        num_hops=2,
+        seed=101,
+        attempt_period=200,
+        link_delay=50,
+        swap_delay=1,
+        loss_p=0.0,
+        channel_depolarization_p=0.0,
+        memory_depolarization_p=0.0,
+        memory_cutoff=50000.0,
+    )
+    c_short = RepeaterChain(ChainConfig(**base, until=4000))
+    c_short.run()
+    c_long = RepeaterChain(ChainConfig(**base, until=40000))
+    c_long.run()
+
+    cancelled_short = sum(1 for _, _, h in c_short.sim._queue if h.cancelled)
+    cancelled_long = sum(1 for _, _, h in c_long.sim._queue if h.cancelled)
+    assert cancelled_short < 64
+    assert cancelled_long < 64
+
+
+@pytest.mark.parametrize(
+    "bad_kwargs",
+    [
+        {"attempt_period": 0},
+        {"attempt_period": -10},
+        {"link_delay": -1},
+        {"swap_delay": -1},
+        {"tick_duration_s": 0},
+        {"loss_p": 1.5},
+        {"channel_depolarization_p": -0.1},
+        {"memory_depolarization_p": 1.1},
+    ],
+)
+def test_chain_config_rejects_invalid_parameters(bad_kwargs):
+    with pytest.raises(ValueError):
+        run_repeater_chain(ChainConfig(**bad_kwargs))

@@ -4,8 +4,13 @@ Uses the exact multi-qubit density-matrix `Register` and per-run `Simulation`
 event queue. Supports:
   - Arbitrary chain length `num_hops >= 1` (N+1 nodes: Alice, N-1 repeaters, Bob)
   - Periodic elementary link attempts with retries when adjacent slots are free
-  - Swap-as-soon-as-both-links-are-ready (swap-asap) at every repeater node
-  - Configurable `memory_cutoff` (simulation ticks; 0 disables cutoff)
+  - Swap-as-soon-as-both-links-are-ready (swap-asap) at every repeater node,
+    respecting classical notification delay (`swap_delay + hop_distance * link_delay`)
+    before a downstream repeater may swap a newly formed segment
+  - Configurable `memory_cutoff` (simulation ticks; 0 disables cutoff), enforced
+    **through delivery**: any segment whose oldest surviving endpoint qubit reaches
+    storage age `memory_cutoff` is discarded, whether waiting for a swap or waiting
+    for end-to-end classical feed-forward
   - O(1)-memory `StreamingStats` by default, with optional `trace=True`
   - Optional lightweight phase timing (`profile=True`) separating register ops,
     event scheduling, and diagnostics for scaling benchmarks.
@@ -52,13 +57,28 @@ class _Segment:
         "left_arrival",
         "right_arrival",
         "created_at",
+        "left_ready",
+        "right_ready",
         "pending_x",
         "pending_z",
         "alive",
         "cutoff_handles",
     )
 
-    def __init__(self, seg_id, left_node, right_node, q_left, q_right, left_arrival, right_arrival, created_at):
+    def __init__(
+        self,
+        seg_id,
+        left_node,
+        right_node,
+        q_left,
+        q_right,
+        left_arrival,
+        right_arrival,
+        created_at,
+        *,
+        left_ready=True,
+        right_ready=True,
+    ):
         self.seg_id = seg_id
         self.left_node = left_node
         self.right_node = right_node
@@ -67,6 +87,8 @@ class _Segment:
         self.left_arrival = left_arrival
         self.right_arrival = right_arrival
         self.created_at = created_at
+        self.left_ready = left_ready
+        self.right_ready = right_ready
         self.pending_x = False
         self.pending_z = False
         self.alive = True
@@ -81,8 +103,20 @@ class RepeaterChain:
             raise ValueError(f"num_hops must be >= 1, got {config.num_hops}")
         if config.until <= 0:
             raise ValueError(f"until must be > 0, got {config.until}")
+        if config.tick_duration_s <= 0:
+            raise ValueError(f"tick_duration_s must be > 0, got {config.tick_duration_s}")
+        if config.attempt_period <= 0:
+            raise ValueError(f"attempt_period must be > 0, got {config.attempt_period}")
+        if config.link_delay < 0:
+            raise ValueError(f"link_delay must be >= 0, got {config.link_delay}")
+        if config.swap_delay < 0:
+            raise ValueError(f"swap_delay must be >= 0, got {config.swap_delay}")
         if config.memory_cutoff < 0:
             raise ValueError(f"memory_cutoff must be >= 0, got {config.memory_cutoff}")
+        for name in ("loss_p", "channel_depolarization_p", "memory_depolarization_p"):
+            val = getattr(config, name)
+            if not (0.0 <= val <= 1.0):
+                raise ValueError(f"{name} must be in [0, 1], got {val}")
 
         self.cfg = config
         self.sim = Simulation(seed=config.seed)
@@ -224,10 +258,29 @@ class RepeaterChain:
         if k + 1 < self.n:
             self._try_swap(k + 1)
 
+    def _on_swap_notify(self, seg, side):
+        if not seg.alive:
+            return
+        if side == "left":
+            seg.left_ready = True
+            if seg.left_node > 0:
+                self._try_swap(seg.left_node)
+        else:
+            seg.right_ready = True
+            if seg.right_node < self.n:
+                self._try_swap(seg.right_node)
+
     def _try_swap(self, node):
         seg_l = self.left_slot[node]
         seg_r = self.right_slot[node]
-        if seg_l is None or seg_r is None or not seg_l.alive or not seg_r.alive:
+        if (
+            seg_l is None
+            or seg_r is None
+            or not seg_l.alive
+            or not seg_r.alive
+            or not seg_l.right_ready
+            or not seg_r.left_ready
+        ):
             return
 
         # Consume both segments at repeater `node`
@@ -263,6 +316,8 @@ class RepeaterChain:
             seg_l.left_arrival,
             seg_r.right_arrival,
             min(seg_l.created_at, seg_r.created_at),
+            left_ready=False,
+            right_ready=False,
         )
         # Accumulate Pauli frame updates (X and Z commute up to global phase)
         new_seg.pending_x = seg_l.pending_x ^ seg_r.pending_x ^ (outcome[1] == "1")
@@ -271,22 +326,31 @@ class RepeaterChain:
         self.right_slot[new_seg.left_node] = new_seg
         self.left_slot[new_seg.right_node] = new_seg
 
+        # Cutoff applies through delivery (both intermediate and end-to-end segments)
+        self._schedule_cutoff(new_seg, min(new_seg.left_arrival, new_seg.right_arrival))
+        if not new_seg.alive:
+            return
+
         if new_seg.left_node == 0 and new_seg.right_node == self.n:
             # End-to-end swap completed: schedule classical feed-forward to endpoints
             max_hops = max(node - new_seg.left_node, new_seg.right_node - node)
             ff_delay = self.cfg.swap_delay + max_hops * self.cfg.link_delay
             self.sim.add(ff_delay, lambda s=new_seg: self._deliver_end_to_end(s))
         else:
-            # Schedule cutoff based on the oldest surviving endpoint arrival
-            self._schedule_cutoff(new_seg, min(new_seg.left_arrival, new_seg.right_arrival))
-            if new_seg.left_node > 0:
-                self._try_swap(new_seg.left_node)
-            if new_seg.right_node < self.n:
-                self._try_swap(new_seg.right_node)
+            # Notify both endpoints after classical propagation delay before downstream swaps
+            left_delay = self.cfg.swap_delay + (node - new_seg.left_node) * self.cfg.link_delay
+            right_delay = self.cfg.swap_delay + (new_seg.right_node - node) * self.cfg.link_delay
+            self.sim.add(left_delay, lambda s=new_seg: self._on_swap_notify(s, "left"))
+            self.sim.add(right_delay, lambda s=new_seg: self._on_swap_notify(s, "right"))
 
     def _deliver_end_to_end(self, seg):
         if not seg.alive:
             return
+        if self.cfg.memory_cutoff > 0.0:
+            oldest_age = self.sim.time - min(seg.left_arrival, seg.right_arrival)
+            if oldest_age > self.cfg.memory_cutoff:
+                self._discard_segment(seg, expired=True)
+                return
         seg.alive = False
         self._cancel_cutoffs(seg)
         if self.right_slot[0] is seg:
