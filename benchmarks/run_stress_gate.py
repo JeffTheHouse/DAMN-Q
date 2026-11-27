@@ -65,9 +65,10 @@ def run_stress_gate(
         isolate_processes=True,
     )["rows"][0]
 
-    # 3. Streaming vs trace invariance (same seed, high loss + expiries)
+    # 3. Streaming vs trace invariance (2-hop so real deliveries occur under high loss + expiries)
+    trace_hops = min(dur_hops, 2)
     tr_off = run_chain_scaling_benchmark(
-        hops_list=(dur_hops,),
+        hops_list=(trace_hops,),
         until=dur_base,
         seed=seed,
         memory_cutoff=memory_cutoff,
@@ -76,7 +77,7 @@ def run_stress_gate(
         isolate_processes=True,
     )["rows"][0]
     tr_on = run_chain_scaling_benchmark(
-        hops_list=(dur_hops,),
+        hops_list=(trace_hops,),
         until=dur_base,
         seed=seed,
         memory_cutoff=memory_cutoff,
@@ -86,19 +87,26 @@ def run_stress_gate(
     )["rows"][0]
 
     trace_invariant = (
-        tr_off["delivered_pairs"] == tr_on["delivered_pairs"]
+        tr_off["delivered_pairs"] > 0
+        and tr_off["delivered_pairs"] == tr_on["delivered_pairs"]
         and tr_off["attempts"] == tr_on["attempts"]
         and tr_off["swaps_completed"] == tr_on["swaps_completed"]
         and tr_off["cutoff_expiries"] == tr_on["cutoff_expiries"]
-        and (
-            tr_off["delivered_pairs"] == 0
-            or abs(tr_off["fidelity"]["mean"] - tr_on["fidelity"]["mean"]) < 1e-12
-        )
+        and abs(tr_off["fidelity"]["mean"] - tr_on["fidelity"]["mean"]) < 1e-12
     )
 
+    retention_passed = (
+        dur_10x["live_queue_len"] <= max(dur_1x["live_queue_len"] * 2, dur_hops * 4)
+        and dur_10x["cancelled_queue_len"] < 64
+        and dur_10x["peak_ram_kib"] <= max(dur_1x["peak_ram_kib"] * 3.0, 512.0)
+    )
+    gate_passed = bool(trace_invariant and retention_passed)
+
     return {
+        "gate_passed": gate_passed,
         "hop_sweep": hop_sweep,
         "duration_retention": {
+            "passed": retention_passed,
             "hops": dur_hops,
             "base_until": dur_base,
             "mult": dur_mult,
@@ -107,6 +115,7 @@ def run_stress_gate(
         },
         "trace_invariance": {
             "passed": trace_invariant,
+            "hops": trace_hops,
             "stream_delivered": tr_off["delivered_pairs"],
             "trace_delivered": tr_on["delivered_pairs"],
             "stream_peak_kib": tr_off["peak_ram_kib"],
@@ -140,7 +149,7 @@ def main(argv=None):
 
     if args.as_json:
         print(json.dumps(report, indent=2))
-        return 0
+        return 0 if report["gate_passed"] else 1
 
     print("=== 1. Hop-Count Sweep (fresh process per hop count) ===")
     print(
@@ -169,11 +178,12 @@ def main(argv=None):
     print("\n=== 3. Streaming vs Trace Invariance ===")
     ti = report["trace_invariance"]
     print(
-        f"passed={ti['passed']} (stream_delivered={ti['stream_delivered']}, "
+        f"passed={ti['passed']} (hops={ti['hops']}, stream_delivered={ti['stream_delivered']}, "
         f"trace_delivered={ti['trace_delivered']}, "
         f"stream_peak_kib={ti['stream_peak_kib']:.1f}, trace_peak_kib={ti['trace_peak_kib']:.1f})"
     )
-    return 0 if ti["passed"] else 1
+    print(f"\nOVERALL GATE PASSED: {report['gate_passed']}")
+    return 0 if report["gate_passed"] else 1
 
 
 if __name__ == "__main__":

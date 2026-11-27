@@ -63,3 +63,16 @@ def test_component_graph_zero_delivery_and_export_roundtrip():
     assert r1["measurements"][0]["pairs"] == 0
     assert r2["measurements"][0]["pairs"] == 0
     assert r1["measurements"] == r2["measurements"]
+
+
+def test_stress_gate_cli_exits_nonzero_in_json_mode_on_failure(monkeypatch):
+    import benchmarks.run_stress_gate as sg
+
+    fake_fail = {
+        "gate_passed": False,
+        "hop_sweep": [],
+        "duration_retention": {"passed": False},
+        "trace_invariance": {"passed": False},
+    }
+    monkeypatch.setattr(sg, "run_stress_gate", lambda **kw: fake_fail)
+    assert sg.main(["--json"]) == 1
