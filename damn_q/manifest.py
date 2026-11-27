@@ -254,10 +254,12 @@ COMPONENT_MANIFEST = {
                 "type": "number",
                 "min": 0,
                 "default": 0,
-                "label": "Controller delay (inactive)",
+                "label": "Readout-request delay",
                 "unit": "simulation ticks",
-                "ui_hidden": True,
-                "description": "Reserved schema 1.0 parameter; currently not applied by Swap Controller.",
+                "description": (
+                    "Delay between matching two ready slots and emitting their readout "
+                    "requests (simulation ticks)."
+                ),
             },
         },
     },
@@ -346,10 +348,12 @@ COMPONENT_MANIFEST = {
                 "min": 0.0,
                 "max": 1.0,
                 "default": 0.0,
-                "label": "Measurement noise (inactive)",
+                "label": "Pre-measurement Pauli error probability",
                 "unit": "[0, 1]",
-                "ui_hidden": True,
-                "description": "Reserved schema 1.0 parameter; currently not applied by measurement.",
+                "description": (
+                    "Local single-qubit Pauli depolarization p applied immediately before "
+                    "projective measurement (X, Y, Z each with p/3; maximally mixed weight 4p/3)."
+                ),
             },
         },
     },
@@ -415,10 +419,12 @@ COMPONENT_MANIFEST = {
                 "min": 0.0,
                 "max": 1.0,
                 "default": 0.0,
-                "label": "Measurement noise (inactive)",
+                "label": "Pre-measurement Pauli error probability",
                 "unit": "[0, 1]",
-                "ui_hidden": True,
-                "description": "Reserved schema 1.0 parameter; currently not applied by measurement.",
+                "description": (
+                    "Local single-qubit Pauli depolarization p applied immediately before "
+                    "projective measurement (X, Y, Z each with p/3; maximally mixed weight 4p/3)."
+                ),
             },
         },
     },

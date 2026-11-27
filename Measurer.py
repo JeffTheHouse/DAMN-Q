@@ -9,7 +9,7 @@ class Measuring_Device:
     def __init__(self, id, delay, x_basis_p = 0, p_depolarization = 0, sim=None):
         self.id = id
         self.delay = delay
-        self.p_depolarization_depolarization= p_depolarization
+        self.p_depolarization = p_depolarization
         self.x_basis_p = x_basis_p
         self.sim = sim if sim is not None else scheduler
         self.ch_in_q = Handler(self.handle, sim=self.sim, kind="quantum", max_connections=1)
@@ -18,6 +18,8 @@ class Measuring_Device:
 
     def handle(self, qubit):
         if qubit.state != None:
+            if self.p_depolarization > 0.0:
+                qubit.depolarize(self.p_depolarization)
             mid = self.id_generator_measurement.generate()
             result = measure(mid, qubit, self.x_basis_p, rng=self.sim.rng)
             out = MeasurementResult(

@@ -6,11 +6,13 @@ from Auto_connector import connect
 from Classic_data_reader import Classic_data_reader
 from Emitter import Handler, bind
 from Entanglment_swapping_module import Entaglment_swapping_module
+from Measurer import Measuring_Device
 from Measurer_memory_paired import Measurer_memory_paired
 from Memory import Quantum_memory
+from Orchestrator import Orchestrator
 from Pauli_corrector import Pauli_corrector
 from Qubits import Qubit, State
-from Signals import BellOutcome, MeasurementResult, PeerHerald, ReadoutRejected
+from Signals import BellOutcome, MeasurementResult, PeerHerald, ReadoutRejected, Ready
 from Simulation import Simulation
 from States import phi_plus
 from damn_q import run_experiment
@@ -407,3 +409,55 @@ def test_bsm_queue_overflow_and_ttl_expiry_report_separate_counts():
     assert es.expired_count == 1
     assert a2_1.state is None
     assert a1_2.register is b2_2.register
+
+
+def test_orchestrator_delay_schedules_readout_requests_at_configured_delay():
+    sim = Simulation()
+    orch = Orchestrator("orch", delay=25, sim=sim)
+
+    events_1 = []
+    events_2 = []
+    bind(orch.ch_out_memory_1, Handler(lambda m: events_1.append((sim.time, m))))
+    bind(orch.ch_out_memory_2, Handler(lambda m: events_2.append((sim.time, m))))
+
+    orch.ch_in_memory_1.handle(Ready(0, memory_id="m1"))
+    orch.ch_in_memory_2.handle(Ready(0, memory_id="m2"))
+
+    # Nothing emitted before t=25
+    sim.run(24)
+    assert events_1 == []
+    assert events_2 == []
+
+    # Both readout requests arrive at t=25 with a shared swap_request_id
+    sim.run(25)
+    assert len(events_1) == 1 and events_1[0][0] == 25
+    assert len(events_2) == 1 and events_2[0][0] == 25
+    assert events_1[0][1].swap_request_id == events_2[0][1].swap_request_id
+
+
+def test_measurement_depolarization_affects_both_measurers():
+    # For |0> in Z basis under local Pauli depolarization p:
+    # P(outcome == "1") = 2p/3 (X and Y each flip Z with probability p/3).
+    # With p=0.75 (maximally mixed), P("1") = 0.5; with p=0.0, P("1") = 0.0.
+    n_trials = 400
+    for cls in (Measuring_Device, Measurer_memory_paired):
+        # p=0.0 -> all "0"
+        sim_clean = Simulation(seed=42)
+        m_clean = cls("m0", delay=0, x_basis_p=0.0, p_depolarization=0.0, sim=sim_clean)
+        out_clean = []
+        bind(m_clean.ch_out_result, Handler(out_clean.append))
+        for i in range(50):
+            m_clean.ch_in_q.handle(Qubit(i, State(KET0.copy())))
+        sim_clean.run(1)
+        assert out_clean == ["0"] * 50
+
+        # p=0.75 -> ~50% "1"
+        sim_noisy = Simulation(seed=42)
+        m_noisy = cls("m1", delay=0, x_basis_p=0.0, p_depolarization=0.75, sim=sim_noisy)
+        out_noisy = []
+        bind(m_noisy.ch_out_result, Handler(out_noisy.append))
+        for i in range(n_trials):
+            m_noisy.ch_in_q.handle(Qubit(i, State(KET0.copy())))
+        sim_noisy.run(1)
+        ones = out_noisy.count("1")
+        assert 160 <= ones <= 240, f"{cls.__name__} expected ~200 flips out of {n_trials}, got {ones}"

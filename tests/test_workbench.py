@@ -186,7 +186,7 @@ def test_manifest_exposes_terminology_channels_and_hides_inactive_controls(workb
         for pname, pspec in spec["ports"].items():
             assert pspec.get("label"), f"{ctype}.{pname} missing display label"
 
-    # Inactive parameters are hidden from the UI while kept in schema 1.0
-    assert comps["orchestrator"]["parameters"]["delay"].get("ui_hidden") is True
-    assert comps["measurer"]["parameters"]["p_depolarization"].get("ui_hidden") is True
-    assert comps["measurer_memory_paired"]["parameters"]["p_depolarization"].get("ui_hidden") is True
+    # Implemented controls are exposed in the UI (not hidden)
+    assert not comps["orchestrator"]["parameters"]["delay"].get("ui_hidden")
+    assert not comps["measurer"]["parameters"]["p_depolarization"].get("ui_hidden")
+    assert not comps["measurer_memory_paired"]["parameters"]["p_depolarization"].get("ui_hidden")

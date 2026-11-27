@@ -7,6 +7,8 @@ from Signals import enqueue_ready, release_request
 
 class Orchestrator:
     def __init__(self, id, delay = 0, sim=None):
+        if delay < 0:
+            raise ValueError(f"Orchestrator delay must be non-negative, got {delay}")
         self.id = id
         self.delay = delay
         self.sim = sim if sim is not None else scheduler
@@ -47,5 +49,5 @@ class Orchestrator:
             req_id = self.sim.next_swap_request_id() if has_mem_id else None
             request_1 = release_request(e1, swap_request_id=req_id)
             request_2 = release_request(e2, swap_request_id=req_id)
-            self.sim.add(0, lambda: self.ch_out_memory_1.emit(request_1))
-            self.sim.add(0, lambda: self.ch_out_memory_2.emit(request_2))
+            self.sim.add(self.delay, lambda: self.ch_out_memory_1.emit(request_1))
+            self.sim.add(self.delay, lambda: self.ch_out_memory_2.emit(request_2))

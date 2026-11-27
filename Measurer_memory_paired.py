@@ -73,6 +73,8 @@ class Measurer_memory_paired:
             # Clear oldest in-flight entry once a readout succeeds
             first_key = next(iter(self._in_flight_es))
             self._in_flight_es.pop(first_key, None)
+        if qubit.state is not None and self.p_depolarization > 0.0:
+            qubit.depolarize(self.p_depolarization)
         measurment_id = self.id_generator_measurement.generate()
         result = measure(measurment_id, qubit, self.x_basis_p, rng=self.sim.rng)
         out = MeasurementResult(
