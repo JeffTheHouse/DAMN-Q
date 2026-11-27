@@ -1,0 +1,65 @@
+import json
+import numpy as np
+
+from damn_q.chain import ChainConfig, run_repeater_chain
+from damn_q.runner import load_experiment, run_experiment
+from damn_q.schema import validate_experiment
+
+
+def test_backend_duration_retention_stays_bounded_at_10x_horizon():
+    """Extending run duration 10x in streaming mode must not grow live/cancelled queues."""
+    base = dict(
+        num_hops=4,
+        seed=101,
+        loss_p=0.5,
+        channel_depolarization_p=0.005,
+        memory_depolarization_p=0.0005,
+        memory_cutoff=400.0,
+        trace=False,
+    )
+    r_1x = run_repeater_chain(ChainConfig(**base, until=4000))
+    r_10x = run_repeater_chain(ChainConfig(**base, until=40000))
+
+    assert r_10x["cutoff_expiries"] > r_1x["cutoff_expiries"] * 5
+    assert r_10x["live_queue_len"] <= 20
+    assert r_10x["cancelled_queue_len"] < 64
+
+
+def test_backend_streaming_vs_trace_invariance_under_high_loss_and_cutoffs():
+    base = dict(
+        num_hops=2,
+        until=10000,
+        seed=101,
+        loss_p=0.5,
+        channel_depolarization_p=0.005,
+        memory_depolarization_p=0.0005,
+        memory_cutoff=400.0,
+    )
+    r_stream = run_repeater_chain(ChainConfig(**base, trace=False))
+    r_trace = run_repeater_chain(ChainConfig(**base, trace=True))
+
+    assert r_stream["delivered_pairs"] == r_trace["delivered_pairs"]
+    assert r_stream["attempts"] == r_trace["attempts"]
+    assert r_stream["swaps_completed"] == r_trace["swaps_completed"]
+    assert r_stream["cutoff_expiries"] == r_trace["cutoff_expiries"]
+    assert np.isclose(r_stream["fidelity"]["mean"], r_trace["fidelity"]["mean"], atol=1e-12)
+    assert np.isclose(r_stream["latency_ticks"]["mean"], r_trace["latency_ticks"]["mean"], atol=1e-12)
+
+
+def test_component_graph_zero_delivery_and_export_roundtrip():
+    """Exported JSON from a zero-delivery run validates and reproduces identically in the runner."""
+    exp = load_experiment("benchmarks/repeater_3node_ref.json")
+    for ch in exp["connections"]:
+        if "loss_p" in ch:
+            ch["loss_p"] = 1.0
+    exp["run"]["until"] = 4000
+
+    # Round-trip through JSON string as the browser export/import does
+    reloaded = json.loads(json.dumps(exp))
+    validate_experiment(reloaded)
+
+    r1 = run_experiment(exp)
+    r2 = run_experiment(reloaded)
+    assert r1["measurements"][0]["pairs"] == 0
+    assert r2["measurements"][0]["pairs"] == 0
+    assert r1["measurements"] == r2["measurements"]

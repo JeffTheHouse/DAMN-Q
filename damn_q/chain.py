@@ -410,6 +410,8 @@ class RepeaterChain:
         sim_s = self.sim.time * self.cfg.tick_duration_s
         n_pairs = self.fidelity_stats.count
         rate = (n_pairs / sim_s) if sim_s > 0 else 0.0
+        cancelled_q = sum(1 for _, _, h in self.sim._queue if h.cancelled)
+        live_q = len(self.sim._queue) - cancelled_q
 
         result = {
             "num_hops": self.n,
@@ -424,6 +426,8 @@ class RepeaterChain:
             "heralded_elementary": self.heralded_elementary,
             "swaps_completed": self.swaps_completed,
             "cutoff_expiries": self.cutoff_expiries,
+            "live_queue_len": live_q,
+            "cancelled_queue_len": cancelled_q,
             "fidelity": self.fidelity_stats.to_dict(),
             "latency_ticks": self.latency_stats.to_dict(),
             "wall_time_s": wall_s,
