@@ -111,33 +111,54 @@ def test_stress_gate_detects_latency_only_trace_mismatch(monkeypatch):
     assert report["gate_passed"] is False
 
 
-def test_pyodide_worker_bootstrap_and_bundle_builder():
+def test_pyodide_worker_bootstrap_and_bundle_builder(tmp_path):
+    """Unpack the generated bundle into an isolated directory and run the worker bootstrap from it alone."""
+    import os
+    import subprocess
+    import sys
     from pathlib import Path
-    from damn_q.web_bundle import build_pyodide_bundle
+    from damn_q.web_bundle import write_pyodide_bundle
 
-    bundle = build_pyodide_bundle()
-    assert "Simulation.py" in bundle
-    assert "damn_q/manifest.py" in bundle
-    assert "damn_q/runner.py" in bundle
-    assert "damn_q/schema.py" in bundle
+    bundle_path = write_pyodide_bundle(tmp_path / "damn_q_bundle.json")
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+
+    # Unpack bundle into a clean directory with NO source checkout on sys.path
+    unpack_dir = tmp_path / "unpacked"
+    for rel_path, src in bundle.items():
+        target = unpack_dir / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(src, encoding="utf-8")
 
     worker_js = Path("damn_q/web/pyodide_worker.js").read_text(encoding="utf-8")
     start = worker_js.index("# --- DAMN_Q_WORKER_BOOTSTRAP_START ---")
     end = worker_js.index("# --- DAMN_Q_WORKER_BOOTSTRAP_END ---")
-    py_code = worker_js[start:end]
+    py_bootstrap = worker_js[start:end]
 
-    ns = {}
-    exec(py_code, ns)
+    exp_ideal = json.dumps(load_experiment("experiments/repeater_ideal.json"))
+    exp_tut = json.dumps(load_experiment("experiments/repeater_tutorial_z.json"))
 
-    manifest = json.loads(ns["_worker_manifest"]())
-    assert "schema_version" in manifest
-    assert "manifest_version" in manifest
-    assert "components" in manifest
-    assert "channels" in manifest
+    driver = (
+        py_bootstrap
+        + "\n"
+        + f"m = json.loads(_worker_manifest())\n"
+        + f"assert 'schema_version' in m and 'components' in m and 'channels' in m\n"
+        + f"v = json.loads(_worker_validate({exp_ideal!r}))\n"
+        + f"assert v['valid'] is True\n"
+        + f"r1 = json.loads(_worker_run({exp_ideal!r}))\n"
+        + f"assert abs(r1['measurements'][0]['mean_fidelity'] - 1.0) < 1e-12\n"
+        + f"r2 = json.loads(_worker_run({exp_tut!r}))\n"
+        + f"assert r2['readers']['reader'] == {{'00': 39, '01': 0, '10': 0, '11': 44}}\n"
+        + "print('BUNDLE_ISOLATED_OK')\n"
+    )
 
-    exp = load_experiment("experiments/repeater_ideal.json")
-    val = json.loads(ns["_worker_validate"](json.dumps(exp)))
-    assert val["valid"] is True
-
-    res = json.loads(ns["_worker_run"](json.dumps(exp)))
-    assert np.isclose(res["measurements"][0]["mean_fidelity"], 1.0, atol=1e-12)
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run(
+        [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(unpack_dir)!r})\n" + driver],
+        cwd=str(unpack_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"Isolated bundle failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    assert "BUNDLE_ISOLATED_OK" in proc.stdout
