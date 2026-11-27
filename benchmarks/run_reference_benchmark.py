@@ -96,6 +96,8 @@ def _summary_stats(values):
 def run_reference_benchmark(seeds=None, until=None, ref_path=REF_JSON):
     """Execute the analytic lossless check plus the multi-seed lossy benchmark."""
     seeds = list(DEFAULT_SEEDS if seeds is None else seeds)
+    if not seeds:
+        raise ValueError("seeds must be a non-empty sequence.")
     base_doc = load_experiment(ref_path)
     if until is not None:
         base_doc = copy.deepcopy(base_doc)
@@ -193,13 +195,16 @@ def main(argv=None):
     parser.add_argument("--until", type=int, default=None, help="Override simulation horizon (ticks).")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable JSON.")
     args = parser.parse_args(argv)
+    if args.seeds < 1:
+        parser.error("--seeds must be >= 1.")
 
     seeds = list(range(101, 101 + args.seeds))
     report = run_reference_benchmark(seeds=seeds, until=args.until)
+    exit_code = 0 if report["lossless_check"]["passed"] else 1
 
     if args.as_json:
         print(json.dumps(report, indent=2))
-        return 0
+        return exit_code
 
     lc = report["lossless_check"]
     agg = report["aggregate"]
@@ -217,9 +222,15 @@ def main(argv=None):
     f = agg["fidelity_at_delivery"]
     lat = agg["latency_us"]
     print(f"  Delivered pairs/s : mean={r['mean']:.1f} +/- {r['std']:.1f} (min={r['min']:.1f}, max={r['max']:.1f})")
-    print(f"  Delivery fidelity : mean={f['mean']:.6f} +/- {f['std']:.6f} (p50={f['p50']:.6f}, min={f['min']:.6f}, max={f['max']:.6f})")
-    print(f"  Delivery latency  : mean={lat['mean']:.1f} us (p50={lat['p50']:.1f} us, p95={lat['p95']:.1f} us, min={lat['min']:.1f} us, max={lat['max']:.1f} us)")
-    return 0
+    if f is None:
+        print("  Delivery fidelity : unavailable (0 delivered pairs)")
+    else:
+        print(f"  Delivery fidelity : mean={f['mean']:.6f} +/- {f['std']:.6f} (p50={f['p50']:.6f}, min={f['min']:.6f}, max={f['max']:.6f})")
+    if lat is None:
+        print("  Delivery latency  : unavailable (0 delivered pairs)")
+    else:
+        print(f"  Delivery latency  : mean={lat['mean']:.1f} us (p50={lat['p50']:.1f} us, p95={lat['p95']:.1f} us, min={lat['min']:.1f} us, max={lat['max']:.1f} us)")
+    return exit_code
 
 
 if __name__ == "__main__":

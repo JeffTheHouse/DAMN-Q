@@ -64,3 +64,32 @@ def test_step1_reference_benchmark_analytic_check_and_multiseed_bounds():
         assert s["unmatched_b"] == 0
         assert s["all_shared_register"] is True
         assert s["swaps_rejected"] == 0
+
+
+def test_benchmark_runner_cli_handles_zero_deliveries_bad_seeds_and_analytic_failure(monkeypatch, capsys):
+    from benchmarks import run_reference_benchmark as runner_mod
+
+    # 1. Zero deliveries (--seeds 1 --until 100) must not crash in text mode
+    rc = runner_mod.main(["--seeds", "1", "--until", "100"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Delivered pairs/s : mean=0.0" in out
+    assert "unavailable (0 delivered pairs)" in out
+
+    # 2. --seeds 0 raises SystemExit(2) with a clear argument error (not IndexError)
+    with pytest.raises(SystemExit) as exc_info:
+        runner_mod.main(["--seeds", "0"])
+    assert exc_info.value.code == 2
+    assert "--seeds must be >= 1" in capsys.readouterr().err
+
+    # 3. Analytic failure returns nonzero exit code in both text and JSON modes
+    orig_pred = runner_mod.analytic_lossless_prediction
+    monkeypatch.setattr(
+        runner_mod,
+        "analytic_lossless_prediction",
+        lambda doc: {**orig_pred(doc), "fidelity": 0.123456},
+    )
+    assert runner_mod.main(["--seeds", "1", "--until", "100"]) == 1
+    assert "FAIL" in capsys.readouterr().out
+    assert runner_mod.main(["--seeds", "1", "--until", "100", "--json"]) == 1
+    capsys.readouterr()
