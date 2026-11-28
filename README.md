@@ -70,6 +70,10 @@ Examples live in `experiments/` (`schema_version: "1.0"`):
 
 The noisy repeater fidelity matches the analytic formula \(F = \tfrac{1}{4}\bigl(1 + 3\prod_i (1 - \tfrac{4p_i}{3})^{t_i}\bigr)\) for storage durations \(t = (12, 6, 6, 12)\) simulation ticks.
 
+### Published field setups
+
+Select **Hefei Field Experiment · Optical Swap Proxy** or **Delft–Eindhoven · Real Fibre Route Proxy** from the workbench's **Project** menu. The Hefei preset uses measured link losses and visibility from an optical swapping experiment. The Delft–Eindhoven preset uses a published fibre route with ideal local operations to isolate fibre loss and latency. See the [field setup notes](benchmarks/FIELD_SETUPS.md) for sources, CLI commands, reference outputs, and modelling limits.
+
 ## Simulator design
 
 - **Per-run `Simulation`** (`Simulation.py`): owns the clock, heap event queue, random stream, and link IDs. Components accept an optional `sim=` argument (defaulting to the process-wide instance). Two simulations in one process do not interfere, and cross-simulation wiring is rejected.
