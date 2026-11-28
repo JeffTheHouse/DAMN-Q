@@ -33,7 +33,10 @@ def _hardware_sweep_passed(rows):
         return False
     for r in rows:
         if r["delivered_pairs"] > 0:
-            f_mean = r.get("fidelity", {}).get("mean")
+            fidelity = r.get("fidelity")
+            if not isinstance(fidelity, dict):
+                return False
+            f_mean = fidelity.get("mean")
             if f_mean is None or not math.isfinite(f_mean) or not (0.0 <= f_mean <= 1.0):
                 return False
     return True
