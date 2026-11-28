@@ -103,6 +103,18 @@ COMPONENT_MANIFEST = {
                     "Applies to the Bell-pair preset (type 2) only."
                 ),
             },
+            "emission_p": {
+                "type": "number",
+                "gt": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Emission probability per attempt",
+                "unit": "(0, 1]",
+                "description": (
+                    "Probability of emitting a state on each clock tick (1.0 = deterministic). "
+                    "Models probabilistic pulsed photonic sources (e.g. SPDC)."
+                ),
+            },
         },
     },
     "quantum_memory": {
@@ -274,6 +286,92 @@ COMPONENT_MANIFEST = {
                     "Maximum ticks a queued qubit waits for its swap partner before expiring "
                     "(0 disables expiry)."
                 ),
+            },
+        },
+    },
+    "optical_bsm": {
+        "label": "Optical BSM (Time-Gated)",
+        "category": "operations",
+        "model": "Click-driven time-gated optical Bell analyser with jitter, efficiency, dark counts, and visibility",
+        "version": "1.0",
+        "ports": {
+            "ch_in_q_1": {"direction": "in", "kind": "quantum", "label": "Photon in 1", "max_connections": 1},
+            "ch_in_q_2": {"direction": "in", "kind": "quantum", "label": "Photon in 2", "max_connections": 1},
+            "ch_out_c_1": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Herald out 1",
+                "message_type": "BellOutcome",
+                "max_connections": None,
+            },
+            "ch_out_c_2": {
+                "direction": "out",
+                "kind": "classical",
+                "label": "Herald out 2",
+                "message_type": "BellOutcome",
+                "max_connections": None,
+            },
+        },
+        "parameters": {
+            "delay": {
+                "type": "number",
+                "min": 0,
+                "default": 1,
+                "label": "Herald notification delay",
+                "unit": "simulation ticks",
+                "description": "Classical delay before emitting the BSM herald after a coincidence.",
+            },
+            "coincidence_window": {
+                "type": "number",
+                "min": 0.0,
+                "default": 1.0,
+                "label": "Coincidence window",
+                "unit": "simulation ticks",
+                "description": "Maximum |t1 - t2| between clicks on the two arms to form a BSM herald.",
+            },
+            "jitter_std": {
+                "type": "number",
+                "min": 0.0,
+                "default": 0.0,
+                "label": "Timing jitter (sigma)",
+                "unit": "simulation ticks",
+                "description": "Gaussian per-photon detection timing jitter standard deviation (0 = none).",
+            },
+            "detector_efficiency": {
+                "type": "number",
+                "gt": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Detector efficiency",
+                "unit": "(0, 1]",
+                "description": "Probability each arriving photon triggers a detector click.",
+            },
+            "dark_count_rate": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Dark-count rate",
+                "unit": "per tick",
+                "description": "Per-tick dark-click probability on each BSM detector arm.",
+            },
+            "visibility": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Two-photon HOM visibility",
+                "unit": "[0, 1]",
+                "description": "Hong-Ou-Mandel interference visibility V for true two-photon coincidences.",
+            },
+            "linear_optical_efficiency": {
+                "type": "number",
+                "gt": 0.0,
+                "max": 1.0,
+                "default": 0.5,
+                "label": "Linear-optical BSM efficiency",
+                "unit": "(0, 1]",
+                "description": "Fraction of Bell states distinguishable by the analyser (0.5 for standard linear optics).",
             },
         },
     },

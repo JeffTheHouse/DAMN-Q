@@ -42,7 +42,7 @@ def test_manifest_declares_wiring_rules_for_all_35_ports():
                 )
             if pspec["direction"] == "in":
                 assert pspec["max_connections"] == 1, f"Input {ctype}.{pname} must default to 1"
-    assert port_count == 35
+    assert port_count == 39
 
 
 def test_python_api_rejects_fanout_on_all_six_quantum_outputs():

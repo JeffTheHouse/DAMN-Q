@@ -19,6 +19,7 @@ from Hardware_models import (
 from Measurer import Measuring_Device
 from Measurer_memory_paired import Measurer_memory_paired
 from Memory import Quantum_memory
+from Optical_bsm import Optical_bsm
 from Orchestrator import Orchestrator
 from Pauli_corrector import Pauli_corrector
 from Simulation import Simulation
@@ -186,6 +187,7 @@ def _instantiate_component(comp_id, ctype, params, sim):
             params["type"],
             sim=sim,
             initial_fidelity=params["initial_fidelity"],
+            emission_p=params["emission_p"],
         )
     if ctype == "quantum_memory":
         return Quantum_memory(
@@ -206,6 +208,18 @@ def _instantiate_component(comp_id, ctype, params, sim):
             queue_ttl=params["queue_ttl"],
             sim=sim,
             visibility=params["visibility"],
+        )
+    if ctype == "optical_bsm":
+        return Optical_bsm(
+            comp_id,
+            delay=params["delay"],
+            coincidence_window=params["coincidence_window"],
+            jitter_std=params["jitter_std"],
+            detector_efficiency=params["detector_efficiency"],
+            dark_count_rate=params["dark_count_rate"],
+            visibility=params["visibility"],
+            linear_optical_efficiency=params["linear_optical_efficiency"],
+            sim=sim,
         )
     if ctype == "orchestrator":
         return Orchestrator(comp_id, delay=params["delay"], sim=sim)
@@ -323,6 +337,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None, trac
     sources_metrics = {}
     memories_metrics = {}
     swappers_metrics = {}
+    optical_bsms_metrics = {}
     measurers_metrics = {}
     readers_unmatched = {}
     readers_coincidences = {}
@@ -330,7 +345,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None, trac
     for cid, obj in instances.items():
         ctype = types[cid]
         if ctype == "source":
-            sources_metrics[cid] = {"attempts": obj.attempts}
+            sources_metrics[cid] = {"attempts": obj.attempts, "emitted": obj.emitted}
         elif ctype == "quantum_memory":
             memories_metrics[cid] = {
                 "heralded_pairs": obj.heralded_count,
@@ -342,6 +357,19 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None, trac
                 "queued": obj.queued_count,
                 "expired": obj.expired_count,
                 "rejected": obj.rejected_count,
+            }
+        elif ctype == "optical_bsm":
+            optical_bsms_metrics[cid] = {
+                "heralds": obj.counter,
+                "true_heralds": obj.true_heralds,
+                "false_heralds": obj.false_heralds,
+                "signal_dark_heralds": obj.signal_dark_heralds,
+                "dark_dark_heralds": obj.dark_dark_heralds,
+                "ambiguous_patterns": obj.ambiguous_patterns,
+                "missed_detections": obj.missed_detections,
+                "expired_photons": obj.expired_photons,
+                "dark_clicks_1": obj.dark_clicks_1,
+                "dark_clicks_2": obj.dark_clicks_2,
             }
         elif ctype in ("measurer", "measurer_memory_paired"):
             measurers_metrics[cid] = {
@@ -392,6 +420,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None, trac
             "sources": sources_metrics,
             "memories": memories_metrics,
             "swappers": swappers_metrics,
+            "optical_bsms": optical_bsms_metrics,
             "measurers": measurers_metrics,
             "readers_unmatched": readers_unmatched,
             "readers_coincidences": readers_coincidences,
