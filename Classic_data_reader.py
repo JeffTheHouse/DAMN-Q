@@ -96,9 +96,12 @@ class Classic_data_reader:
         else:
             own_q, other_q = self._coinc_q2, self._coinc_q1
 
-        # Drop clicks on the opposite side that are already older than the window.
+        # Drop clicks on both sides that are already older than the window:
+        # monotonic time guarantees they can never match any future click.
         while other_q and (now - other_q[0][0]) > w:
             other_q.popleft()
+        while own_q and (now - own_q[0][0]) > w:
+            own_q.popleft()
 
         if other_q and abs(now - other_q[0][0]) <= w:
             _t_other, b_other, pid_other, dark_other = other_q.popleft()

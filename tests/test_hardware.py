@@ -485,6 +485,33 @@ def test_coincidence_window_filters_out_of_window_clicks():
     assert r_wide.count_00 == 0
 
 
+def test_one_sided_traffic_prunes_expired_coincidence_queue():
+    from Classic_data_reader import Classic_data_reader
+    from Signals import MeasurementResult
+
+    sim = Simulation(seed=0)
+    reader = Classic_data_reader("r", sim=sim, coincidence_window=1.0)
+    for t in range(1, 10001):
+        sim._time = t  # noqa: SLF001 - advance clock directly for 10k-click soak
+        reader.input_1.handle(MeasurementResult("0", pair_id=None, is_dark_count=True))
+
+    # Window=1 tick means at most clicks at t and t-1 can still match future arrivals.
+    assert len(reader._coinc_q1) <= 2  # noqa: SLF001
+    assert len(reader._coinc_q2) == 0  # noqa: SLF001
+    assert reader.untagged_1 == 10000
+    assert reader.dark_clicks_1 == 10000
+    assert reader.coincidence_summary()["total"] == 0
+
+    # Symmetric check on input_2 only.
+    sim2 = Simulation(seed=0)
+    reader2 = Classic_data_reader("r2", sim=sim2, coincidence_window=1.0)
+    for t in range(1, 10001):
+        sim2._time = t  # noqa: SLF001
+        reader2.input_2.handle(MeasurementResult("1", pair_id=None, is_dark_count=True))
+    assert len(reader2._coinc_q2) <= 2  # noqa: SLF001
+    assert reader2.untagged_2 == 10000
+
+
 def test_sparse_dark_counts_accidental_rate_scales_as_r_squared():
     doc = _base_doc()
     doc["run"]["until"] = 4000

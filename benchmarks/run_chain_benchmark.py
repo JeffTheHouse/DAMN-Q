@@ -71,7 +71,15 @@ def _run_single_hop_in_process(
     loss_p,
     channel_depolarization_p,
     memory_depolarization_p,
-    trace,
+    length_km=0.0,
+    attenuation_db_per_km=0.2,
+    coupling_loss_db=0.0,
+    initial_fidelity=1.0,
+    memory_t1_ticks=0.0,
+    memory_t2_ticks=0.0,
+    bsm_visibility=1.0,
+    detector_efficiency=1.0,
+    trace=False,
 ):
     cfg = ChainConfig(
         num_hops=n_hops,
@@ -81,6 +89,14 @@ def _run_single_hop_in_process(
         channel_depolarization_p=channel_depolarization_p,
         memory_depolarization_p=memory_depolarization_p,
         memory_cutoff=memory_cutoff,
+        length_km=length_km,
+        attenuation_db_per_km=attenuation_db_per_km,
+        coupling_loss_db=coupling_loss_db,
+        initial_fidelity=initial_fidelity,
+        memory_t1_ticks=memory_t1_ticks,
+        memory_t2_ticks=memory_t2_ticks,
+        bsm_visibility=bsm_visibility,
+        detector_efficiency=detector_efficiency,
         trace=trace,
         profile=True,
     )
@@ -106,6 +122,14 @@ def run_chain_scaling_benchmark(
     loss_p=0.2,
     channel_depolarization_p=0.005,
     memory_depolarization_p=0.0005,
+    length_km=0.0,
+    attenuation_db_per_km=0.2,
+    coupling_loss_db=0.0,
+    initial_fidelity=1.0,
+    memory_t1_ticks=0.0,
+    memory_t2_ticks=0.0,
+    bsm_visibility=1.0,
+    detector_efficiency=1.0,
     trace=False,
     isolate_processes=True,
 ):
@@ -129,6 +153,22 @@ def run_chain_scaling_benchmark(
                 repr(channel_depolarization_p),
                 "--memory-depolarization-p",
                 repr(memory_depolarization_p),
+                "--length-km",
+                repr(length_km),
+                "--attenuation-db-per-km",
+                repr(attenuation_db_per_km),
+                "--coupling-loss-db",
+                repr(coupling_loss_db),
+                "--initial-fidelity",
+                repr(initial_fidelity),
+                "--memory-t1-ticks",
+                repr(memory_t1_ticks),
+                "--memory-t2-ticks",
+                repr(memory_t2_ticks),
+                "--bsm-visibility",
+                repr(bsm_visibility),
+                "--detector-efficiency",
+                repr(detector_efficiency),
                 "--in-process",
                 "--json",
             ]
@@ -147,6 +187,14 @@ def run_chain_scaling_benchmark(
                     loss_p=loss_p,
                     channel_depolarization_p=channel_depolarization_p,
                     memory_depolarization_p=memory_depolarization_p,
+                    length_km=length_km,
+                    attenuation_db_per_km=attenuation_db_per_km,
+                    coupling_loss_db=coupling_loss_db,
+                    initial_fidelity=initial_fidelity,
+                    memory_t1_ticks=memory_t1_ticks,
+                    memory_t2_ticks=memory_t2_ticks,
+                    bsm_visibility=bsm_visibility,
+                    detector_efficiency=detector_efficiency,
                     trace=trace,
                 )
             )
@@ -180,6 +228,14 @@ def main(argv=None):
         default=0.0005,
         help="Per-tick memory depolarization probability (default: 0.0005).",
     )
+    parser.add_argument("--length-km", type=float, default=0.0, help="Per-arm fibre length in km (default: 0.0).")
+    parser.add_argument("--attenuation-db-per-km", type=float, default=0.2, help="Fibre attenuation in dB/km (default: 0.2).")
+    parser.add_argument("--coupling-loss-db", type=float, default=0.0, help="Coupling loss in dB (default: 0.0).")
+    parser.add_argument("--initial-fidelity", type=float, default=1.0, help="Initial Werner Bell-pair fidelity (default: 1.0).")
+    parser.add_argument("--memory-t1-ticks", type=float, default=0.0, help="Memory T1 relaxation time in ticks (0 = off).")
+    parser.add_argument("--memory-t2-ticks", type=float, default=0.0, help="Memory T2 coherence time in ticks (0 = off).")
+    parser.add_argument("--bsm-visibility", type=float, default=1.0, help="BSM interference visibility (default: 1.0).")
+    parser.add_argument("--detector-efficiency", type=float, default=1.0, help="Detector efficiency in (0, 1] (default: 1.0).")
     parser.add_argument("--trace", action="store_true", help="Retain full sample traces instead of O(1) streaming.")
     parser.add_argument(
         "--in-process",
@@ -201,6 +257,14 @@ def main(argv=None):
         loss_p=args.loss_p,
         channel_depolarization_p=args.channel_depolarization_p,
         memory_depolarization_p=args.memory_depolarization_p,
+        length_km=args.length_km,
+        attenuation_db_per_km=args.attenuation_db_per_km,
+        coupling_loss_db=args.coupling_loss_db,
+        initial_fidelity=args.initial_fidelity,
+        memory_t1_ticks=args.memory_t1_ticks,
+        memory_t2_ticks=args.memory_t2_ticks,
+        bsm_visibility=args.bsm_visibility,
+        detector_efficiency=args.detector_efficiency,
         trace=args.trace,
         isolate_processes=not args.in_process,
     )

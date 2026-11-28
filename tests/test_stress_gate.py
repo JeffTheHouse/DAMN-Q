@@ -168,3 +168,39 @@ def test_pyodide_worker_bootstrap_and_bundle_builder(tmp_path):
     )
     assert proc.returncode == 0, f"Isolated bundle failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     assert "BUNDLE_ISOLATED_OK" in proc.stdout
+
+
+def test_stress_gate_includes_hardware_hop_sweep_and_isolated_parity():
+    from benchmarks.run_chain_benchmark import run_chain_scaling_benchmark
+    from benchmarks.run_stress_gate import run_stress_gate
+
+    hw_kwargs = dict(
+        hops_list=(2,),
+        until=4000,
+        seed=101,
+        loss_p=0.0,
+        channel_depolarization_p=0.0,
+        memory_depolarization_p=0.0,
+        length_km=2.0,
+        initial_fidelity=0.95,
+        memory_t1_ticks=2000.0,
+        memory_t2_ticks=1500.0,
+        bsm_visibility=0.95,
+        detector_efficiency=0.9,
+    )
+    iso = run_chain_scaling_benchmark(**hw_kwargs, isolate_processes=True)["rows"][0]
+    inp = run_chain_scaling_benchmark(**hw_kwargs, isolate_processes=False)["rows"][0]
+    assert iso["delivered_pairs"] == inp["delivered_pairs"] > 0
+    assert np.isclose(iso["fidelity"]["mean"], inp["fidelity"]["mean"], atol=1e-12)
+
+    report = run_stress_gate(
+        hops_list=(2, 4),
+        hop_until=4000,
+        dur_hops=2,
+        dur_base=6000,
+        dur_mult=2,
+        loss_p=0.2,
+    )
+    assert report["hardware_hop_sweep"]["passed"] is True
+    assert len(report["hardware_hop_sweep"]["rows"]) == 2
+    assert report["gate_passed"] is True

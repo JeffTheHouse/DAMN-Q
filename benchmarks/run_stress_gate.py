@@ -96,16 +96,48 @@ def run_stress_gate(
         and abs(tr_off["latency_ticks"]["mean"] - tr_on["latency_ticks"]["mean"]) < 1e-12
     )
 
+    # 4. Hardware-noise hop-count sweep (Step 3 fibre + Werner + T1/T2 + BSM visibility + detector eta)
+    hardware_hop_sweep = run_chain_scaling_benchmark(
+        hops_list=hops_list,
+        until=hop_until,
+        seed=seed,
+        memory_cutoff=0.0,
+        loss_p=0.0,
+        channel_depolarization_p=0.0,
+        memory_depolarization_p=0.0,
+        length_km=2.0,
+        coupling_loss_db=0.0,
+        initial_fidelity=0.95,
+        memory_t1_ticks=2000.0,
+        memory_t2_ticks=1500.0,
+        bsm_visibility=0.95,
+        detector_efficiency=0.9,
+        trace=False,
+        isolate_processes=True,
+    )["rows"]
+
+    hardware_sweep_passed = bool(
+        hardware_hop_sweep
+        and all(r["cancelled_queue_len"] < 64 for r in hardware_hop_sweep)
+        and hardware_hop_sweep[0]["delivered_pairs"] > 0
+        and hardware_hop_sweep[0]["fidelity"]["mean"] is not None
+        and 0.0 < hardware_hop_sweep[0]["fidelity"]["mean"] <= 1.0
+    )
+
     retention_passed = (
         dur_10x["live_queue_len"] <= max(dur_1x["live_queue_len"] * 2, dur_hops * 4)
         and dur_10x["cancelled_queue_len"] < 64
         and dur_10x["peak_ram_kib"] <= max(dur_1x["peak_ram_kib"] * 3.0, 512.0)
     )
-    gate_passed = bool(trace_invariant and retention_passed)
+    gate_passed = bool(trace_invariant and retention_passed and hardware_sweep_passed)
 
     return {
         "gate_passed": gate_passed,
         "hop_sweep": hop_sweep,
+        "hardware_hop_sweep": {
+            "passed": hardware_sweep_passed,
+            "rows": hardware_hop_sweep,
+        },
         "duration_retention": {
             "passed": retention_passed,
             "hops": dur_hops,
@@ -183,6 +215,23 @@ def main(argv=None):
         f"trace_delivered={ti['trace_delivered']}, "
         f"stream_peak_kib={ti['stream_peak_kib']:.1f}, trace_peak_kib={ti['trace_peak_kib']:.1f})"
     )
+
+    print("\n=== 4. Hardware-Noise Hop-Count Sweep (fibre + Werner + T1/T2 + BSM V + eta) ===")
+    hw = report["hardware_hop_sweep"]
+    print(
+        f"{'Hops':>4} | {'Deliv':>5} | {'Mean F':>7} | {'LiveQ':>5} | {'CancQ':>5} | "
+        f"{'Wall (s)':>8} | {'Peak KiB':>9} | {'Proc MiB':>8} | {'Dominant':>10}"
+    )
+    print("-" * 82)
+    for r in hw["rows"]:
+        f_mean = r["fidelity"]["mean"] if r["fidelity"] and r["fidelity"]["mean"] is not None else float("nan")
+        print(
+            f"{r['num_hops']:>4} | {r['delivered_pairs']:>5} | {f_mean:>7.4f} | "
+            f"{r['live_queue_len']:>5} | {r['cancelled_queue_len']:>5} | "
+            f"{r['wall_time_s']:>8.3f} | {r['peak_ram_kib']:>9.1f} | "
+            f"{r['process_peak_rss_mib']:>8.1f} | {r['profile']['dominant']:>10}"
+        )
+    print(f"hardware_sweep_passed={hw['passed']}")
     print(f"\nOVERALL GATE PASSED: {report['gate_passed']}")
     return 0 if report["gate_passed"] else 1
 
