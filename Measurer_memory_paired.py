@@ -4,6 +4,7 @@ from Emitter import*
 from Measurment_module import*
 from Id_generator import*
 from Signals import MeasurementResult, ReadoutRejected, enqueue_ready, release_request
+from Hardware_models import geometric_gap
 import numpy as np
 import random
 
@@ -22,12 +23,21 @@ class Measurer_memory_paired:
     slot instead of being lost.
     """
 
-    def __init__(self, id, delay, x_basis_p = 0, p_depolarization = 0, sim=None):
+    def __init__(self, id, delay, x_basis_p = 0, p_depolarization = 0, sim=None,
+                 detector_efficiency=1.0, dark_count_rate=0.0):
         self.id = id
         self.delay = delay
         self.p_depolarization= p_depolarization
         self.x_basis_p = x_basis_p
         self.sim = sim if sim is not None else scheduler
+        if not (0.0 < detector_efficiency <= 1.0):
+            raise ValueError(f"detector_efficiency must be in (0, 1], got {detector_efficiency}")
+        if not (0.0 <= dark_count_rate <= 1.0):
+            raise ValueError(f"dark_count_rate must be in [0, 1], got {dark_count_rate}")
+        self.detector_efficiency = float(detector_efficiency)
+        self.dark_count_rate = float(dark_count_rate)
+        self.dark_counts = 0
+        self.missed_detections = 0
         self.ch_in_q = Handler(self.handle_qubit, sim=self.sim, kind="quantum", max_connections=1)
         self.ch_in_es = Handler(self.handle_es, sim=self.sim, kind="classical", max_connections=1)
         self.ch_in_memory_c = Handler(self.handle_memory_c, sim=self.sim, kind="classical", max_connections=1)
@@ -38,6 +48,8 @@ class Measurer_memory_paired:
         self._pending_es = deque()
         self._in_flight_es = {}
         self.es_message = None
+        if self.dark_count_rate > 0.0:
+            self._schedule_dark_count()
 
     @property
     def memory_qubit_counter(self):
@@ -75,6 +87,11 @@ class Measurer_memory_paired:
             self._in_flight_es.pop(first_key, None)
         if qubit.state is not None and self.p_depolarization > 0.0:
             qubit.depolarize(self.p_depolarization)
+        if self.detector_efficiency < 1.0 and qubit.state is not None:
+            qubit.loss(1.0 - self.detector_efficiency, rng=self.sim.rng)
+            if qubit.state is None:
+                self.missed_detections += 1
+                return
         measurment_id = self.id_generator_measurement.generate()
         result = measure(measurment_id, qubit, self.x_basis_p, rng=self.sim.rng)
         out = MeasurementResult(
@@ -84,3 +101,15 @@ class Measurer_memory_paired:
             measurement_id=measurment_id,
         )
         self.sim.add(self.delay, lambda m=out: self.ch_out_result.emit(m))
+
+    def _schedule_dark_count(self):
+        self.sim.add(geometric_gap(self.dark_count_rate, self.sim.rng), self._on_dark_count)
+
+    def _on_dark_count(self):
+        mid = self.id_generator_measurement.generate()
+        bit = "1" if self.sim.rng.random() < 0.5 else "0"
+        basis = "x" if self.sim.rng.random() < self.x_basis_p else "z"
+        self.dark_counts += 1
+        out = MeasurementResult(bit, pair_id=None, basis=basis, measurement_id=mid)
+        self.sim.add(self.delay, lambda m=out: self.ch_out_result.emit(m))
+        self._schedule_dark_count()

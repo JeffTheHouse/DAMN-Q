@@ -3,8 +3,11 @@
 import math
 
 from damn_q.manifest import get_component_spec
+from Hardware_models import validate_storage_times
 
 SCHEMA_VERSION = "1.0"
+
+_FIBRE_KEYS = ("length_km", "attenuation_db_per_km", "coupling_loss_db")
 
 
 class ExperimentValidationError(ValueError):
@@ -131,9 +134,18 @@ def validate_experiment(doc):
                     errors.append(f"Component {cid!r} ({ctype}) has unknown parameter {pname!r}.")
                 else:
                     _validate_param(cid, pname, pval, spec["parameters"][pname], errors)
-            comp_map[cid] = (ctype, spec, _resolved_params(spec, params))
+            resolved = _resolved_params(spec, params)
+            comp_map[cid] = (ctype, spec, resolved)
+            if ctype == "quantum_memory":
+                t1, t2 = resolved.get("t1_ticks"), resolved.get("t2_ticks")
+                if _is_number(t1) and _is_number(t2) and t1 >= 0 and t2 >= 0:
+                    try:
+                        validate_storage_times(t1, t2)
+                    except ValueError as exc:
+                        errors.append(f"Component {cid!r} (quantum_memory): {exc}")
 
     connections = doc.get("connections", [])
+    run_tick_s = run_cfg.get("tick_duration_s") if isinstance(run_cfg, dict) else None
     seen_edges = set()
     out_counts = {}
     in_counts = {}
@@ -255,6 +267,22 @@ def validate_experiment(doc):
             if src_port_spec["kind"] == "classical" and (loss_p != 0.0 or depol_p != 0.0):
                 errors.append(
                     f"connections[{idx}] is classical and cannot set quantum loss_p or depolarization_p."
+                )
+
+            fibre_present = [k for k in _FIBRE_KEYS if k in conn]
+            if fibre_present and src_port_spec["kind"] == "classical":
+                errors.append(
+                    f"connections[{idx}] is classical and cannot set fibre parameters {fibre_present}."
+                )
+            for key in fibre_present:
+                value = conn[key]
+                if not _is_number(value) or value < 0:
+                    errors.append(f"connections[{idx}].{key} must be a non-negative number, got {value!r}.")
+            length_km = conn.get("length_km", 0.0)
+            if _is_number(length_km) and length_km > 0 and run_tick_s is None:
+                errors.append(
+                    f"connections[{idx}] sets length_km and requires 'run.tick_duration_s' to convert fibre "
+                    f"propagation delay to ticks."
                 )
 
     measurements = doc.get("measurements", [])

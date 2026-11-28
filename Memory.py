@@ -5,6 +5,7 @@ from Qubits import *
 from Emitter import *
 from Id_generator import *
 from Signals import PeerHerald, ReadoutRejected, Ready, Release
+from Hardware_models import storage_decoherence_kraus, validate_storage_times
 
 
 def _composed_depolarization_p(p, ticks):
@@ -40,10 +41,15 @@ class Quantum_memory:
       controllers do not stall waiting for a qubit that will never arrive.
     """
 
-    def __init__(self, id, depolarization_p, delay=0, capacity=100, fifo=1, sim=None):
+    def __init__(self, id, depolarization_p, delay=0, capacity=100, fifo=1, sim=None, t1=0, t2=0):
         self.id = id
         self.delay = delay
         self.depolarization_p = depolarization_p
+        # Storage relaxation times in ticks (0 disables). Applied at release using the
+        # total elapsed storage time, so the qubit decoheres while it sits in memory.
+        validate_storage_times(t1, t2)
+        self.t1 = t1
+        self.t2 = t2
         self.fifo = fifo
         self.sim = sim if sim is not None else scheduler
         self.ch_in_q = Handler(self.handle_receive, sim=self.sim, kind="quantum", max_connections=1)
@@ -67,6 +73,16 @@ class Quantum_memory:
     @property
     def occupied_slots(self):
         return len(self.memory) + len(self.temperory_memory)
+
+    def _storage_kraus(self, passed_time):
+        """Amplitude-damping and dephasing Kraus lists for `passed_time` ticks in memory."""
+        if self.t1 == 0 and self.t2 == 0:
+            return [], []
+        if not float(passed_time).is_integer():
+            raise ValueError(
+                f"Storage decoherence requires integer storage ticks, got {passed_time}"
+            )
+        return storage_decoherence_kraus(int(round(passed_time)), self.t1, self.t2)
 
     def _evict_oldest(self):
         oldest_confirmed = None
@@ -204,6 +220,7 @@ class Quantum_memory:
             passed_time = self.sim.time - arrival_time
             # Validate duration before mutating memory occupancy
             p_eff = _composed_depolarization_p(self.depolarization_p, passed_time)
+            ad_ops, pd_ops = self._storage_kraus(passed_time)
 
             self.memory.pop(slot_id)
             self._remove_confirmed_slot(slot_id)
@@ -227,6 +244,7 @@ class Quantum_memory:
             passed_time = self.sim.time - arrival_time
             # Validate duration before mutating memory occupancy
             p_eff = _composed_depolarization_p(self.depolarization_p, passed_time)
+            ad_ops, pd_ops = self._storage_kraus(passed_time)
 
             if self.fifo == 1:
                 self._confirmed_order.popleft()
@@ -234,6 +252,11 @@ class Quantum_memory:
                 self._confirmed_order.pop()
             self.memory.pop(slot_id)
 
-        if p_eff != 0.0 and emitted_qubit.state is not None:
-            emitted_qubit.depolarize(p_eff)
+        if emitted_qubit.state is not None:
+            if p_eff != 0.0:
+                emitted_qubit.depolarize(p_eff)
+            if ad_ops:
+                emitted_qubit.apply_kraus(ad_ops)
+            if pd_ops:
+                emitted_qubit.apply_kraus(pd_ops)
         self.sim.add(self.delay, lambda q=emitted_qubit: self.ch_out_q.emit(q))

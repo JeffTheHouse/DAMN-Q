@@ -10,6 +10,12 @@ from Classic_data_reader import Classic_data_reader
 from Detector_module import Detector_module
 from Emitter import Handler
 from Entanglment_swapping_module import Entaglment_swapping_module
+from Hardware_models import (
+    DEFAULT_FIBRE_ATTENUATION_DB_PER_KM,
+    combined_loss_p,
+    fibre_loss_p,
+    propagation_ticks,
+)
 from Measurer import Measuring_Device
 from Measurer_memory_paired import Measurer_memory_paired
 from Memory import Quantum_memory
@@ -156,9 +162,31 @@ def _resolve_params(ctype, raw_params):
     return resolved
 
 
+def _connection_quantum_effects(conn, tick_duration_s):
+    """Effective (delay, loss_p) of a quantum connection including optional fibre effects.
+
+    Fibre length adds propagation delay (whole ticks) and attenuation/coupling loss,
+    composed independently with the connection's own `loss_p`. With no fibre keys
+    the connection's `delay` and `loss_p` are returned unchanged.
+    """
+    length_km = conn.get("length_km", 0.0)
+    coupling_db = conn.get("coupling_loss_db", 0.0)
+    attenuation = conn.get("attenuation_db_per_km", DEFAULT_FIBRE_ATTENUATION_DB_PER_KM)
+    delay = conn.get("delay", 0) + propagation_ticks(length_km, tick_duration_s)
+    extra_loss = fibre_loss_p(length_km, attenuation, coupling_db)
+    loss_p = combined_loss_p(conn.get("loss_p", 0.0), extra_loss)
+    return delay, loss_p
+
+
 def _instantiate_component(comp_id, ctype, params, sim):
     if ctype == "source":
-        return Source(comp_id, params["delay"], params["type"], sim=sim)
+        return Source(
+            comp_id,
+            params["delay"],
+            params["type"],
+            sim=sim,
+            initial_fidelity=params["initial_fidelity"],
+        )
     if ctype == "quantum_memory":
         return Quantum_memory(
             comp_id,
@@ -167,6 +195,8 @@ def _instantiate_component(comp_id, ctype, params, sim):
             capacity=params["capacity"],
             fifo=params["fifo"],
             sim=sim,
+            t1=params["t1_ticks"],
+            t2=params["t2_ticks"],
         )
     if ctype == "entanglement_swapper":
         return Entaglment_swapping_module(
@@ -175,6 +205,7 @@ def _instantiate_component(comp_id, ctype, params, sim):
             queue_capacity=params["queue_capacity"],
             queue_ttl=params["queue_ttl"],
             sim=sim,
+            visibility=params["visibility"],
         )
     if ctype == "orchestrator":
         return Orchestrator(comp_id, delay=params["delay"], sim=sim)
@@ -187,6 +218,8 @@ def _instantiate_component(comp_id, ctype, params, sim):
             x_basis_p=params["x_basis_p"],
             p_depolarization=params["p_depolarization"],
             sim=sim,
+            detector_efficiency=params["detector_efficiency"],
+            dark_count_rate=params["dark_count_rate"],
         )
     if ctype == "measurer_memory_paired":
         return Measurer_memory_paired(
@@ -195,6 +228,8 @@ def _instantiate_component(comp_id, ctype, params, sim):
             x_basis_p=params["x_basis_p"],
             p_depolarization=params["p_depolarization"],
             sim=sim,
+            detector_efficiency=params["detector_efficiency"],
+            dark_count_rate=params["dark_count_rate"],
         )
     if ctype == "classic_data_reader":
         return Classic_data_reader(comp_id, sim=sim)
@@ -250,11 +285,14 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         dst_obj = instances[conn["to"]["component"]]
         src_port = getattr(src_obj, conn["from"]["port"])
         dst_port = getattr(dst_obj, conn["to"]["port"])
+        # Fibre keys are only accepted on quantum connections (schema); without them this
+        # returns the connection's own delay and loss_p unchanged.
+        delay, loss_p = _connection_quantum_effects(conn, tick_duration_s)
         connect(
             src_port,
             dst_port,
-            delay=conn.get("delay", 0),
-            loss_p=conn.get("loss_p", 0.0),
+            delay=delay,
+            loss_p=loss_p,
             depolarization_p=conn.get("depolarization_p", 0.0),
             sim=sim,
         )

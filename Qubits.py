@@ -274,6 +274,40 @@ class Register:
         reg.density_matrix = np.array([[1.0]], dtype=complex)
         return outcome, None
 
+    @classmethod
+    def bell_measure_imperfect(cls, q1, q2, visibility=1.0, rng=None):
+        """Bell measurement with imperfect interference (visibility `visibility` in [0, 1]).
+
+        With probability `visibility` the ideal Bell-state measurement is performed.
+        Otherwise interference fails: the outcome is drawn uniformly over the four Bell
+        labels and the measured pair is discarded, leaving the other qubits in their
+        reduced state. Averaged over the branch choice, the outcome POVM is
+        E_k = V |B_k><B_k| + (1 - V)/4 I, which sums to the identity.
+
+        `visibility == 1` delegates to `bell_measure` with the same random draws, so
+        ideal runs are bit-for-bit unchanged.
+        """
+        if not (0.0 <= visibility <= 1.0):
+            raise ValueError(f"Bell-measurement visibility must be in [0, 1], got {visibility}")
+        if visibility >= 1.0:
+            return cls.bell_measure(q1, q2, rng=rng)
+        if q1 is q2:
+            raise ValueError("Bell measurement requires two distinct qubits.")
+        if _draw(rng) < visibility:
+            return cls.bell_measure(q1, q2, rng=rng)
+
+        reg = cls.ensure_joint(q1, q2)
+        labels = [label for label, _ in _BELL_STATES]
+        outcome = labels[min(int(_draw(rng) * len(labels)), len(labels) - 1)]
+        # Discard the measured pair (partial trace); remaining qubits keep their reduced state.
+        reg.trace_out(q1)
+        reg.trace_out(q2)
+        if reg.num_qubits == 0 or not reg._qubits:
+            reg._qubits = []
+            reg.density_matrix = np.array([[1.0]], dtype=complex)
+            return outcome, None
+        return outcome, reg
+
 
 class State(Register):
     """Backwards-compatible density-matrix State backed by Register."""
@@ -357,6 +391,11 @@ class Qubit:
     def depolarize(self, p):
         if self._register is not None:
             self._register.depolarize(self, p)
+
+    def apply_kraus(self, kraus_ops):
+        """Apply a single-qubit channel given by Kraus operators (no-op if stateless)."""
+        if self._register is not None:
+            self._register.apply_kraus(self, kraus_ops)
 
     def apply_unitary(self, unitary):
         if self._register is not None:

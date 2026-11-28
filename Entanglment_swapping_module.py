@@ -21,13 +21,17 @@ class Entaglment_swapping_module:
       `queue_ttl` simulation ticks expire (traced out, `expired_count += 1`).
     """
 
-    def __init__(self, id, delay=0, queue_capacity=1, queue_ttl=0, sim=None):
+    def __init__(self, id, delay=0, queue_capacity=1, queue_ttl=0, sim=None, visibility=1.0):
         if queue_capacity < 1:
             raise ValueError(f"queue_capacity must be >= 1, got {queue_capacity}")
         if queue_ttl is not None and queue_ttl < 0:
             raise ValueError(f"queue_ttl must be >= 0, got {queue_ttl}")
+        if not (0.0 <= visibility <= 1.0):
+            raise ValueError(f"visibility must be in [0, 1], got {visibility}")
         self.id = id
         self.delay = delay
+        # Bell-state interference visibility; 1.0 is an ideal (projective) measurement.
+        self.visibility = float(visibility)
         self.queue_capacity = int(queue_capacity)
         self.queue_ttl = float(queue_ttl) if queue_ttl else 0.0
         self.sim = sim if sim is not None else scheduler
@@ -82,7 +86,9 @@ class Entaglment_swapping_module:
                 return
 
     def _perform_swap(self, q1, q2):
-        outcome, remaining_reg = Register.bell_measure(q1, q2, rng=self.sim.rng)
+        outcome, remaining_reg = Register.bell_measure_imperfect(
+            q1, q2, visibility=self.visibility, rng=self.sim.rng
+        )
         swap_id = self.sim.next_swap_id()
         req_id = getattr(q1, "swap_request_id", None)
         if req_id is None:

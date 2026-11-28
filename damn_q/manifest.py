@@ -29,6 +29,24 @@ CHANNEL_MANIFEST = {
                     "no error with probability 1 - p)."
                 ),
             },
+            "length_km": {
+                "label": "Fibre length",
+                "unit": "km",
+                "description": (
+                    "Optional fibre length. Adds propagation delay length/200000 km/s (rounded to whole "
+                    "ticks; requires run.tick_duration_s) and attenuation loss. 0 disables fibre effects."
+                ),
+            },
+            "attenuation_db_per_km": {
+                "label": "Fibre attenuation",
+                "unit": "dB/km",
+                "description": "Fibre attenuation alpha; loss = 1 - 10^(-(alpha*L + coupling)/10). Default 0.2 dB/km.",
+            },
+            "coupling_loss_db": {
+                "label": "Coupling loss",
+                "unit": "dB",
+                "description": "Fixed loss per fibre link (connector and coupling), independent of length.",
+            },
         },
     },
     "classical": {
@@ -72,6 +90,18 @@ COMPONENT_MANIFEST = {
                 "default": 2,
                 "label": "Source preset",
                 "description": "1 = single |0> qubit on out_ch_1; 2 = Bell pair |Phi+> on out_ch_1 and out_ch_2.",
+            },
+            "initial_fidelity": {
+                "type": "number",
+                "min": 0.25,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Initial Bell-pair fidelity",
+                "unit": "[0.25, 1]",
+                "description": (
+                    "Fidelity of emitted Bell pairs with |Phi+> (Werner state). 1 = ideal pair. "
+                    "Applies to the Bell-pair preset (type 2) only."
+                ),
             },
         },
     },
@@ -124,6 +154,27 @@ COMPONENT_MANIFEST = {
                 "description": (
                     "Total probability p of applying X, Y, or Z per simulation tick "
                     "(each with probability p/3; no error with probability 1 - p)."
+                ),
+            },
+            "t1_ticks": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Energy relaxation time T1",
+                "unit": "simulation ticks",
+                "description": (
+                    "Amplitude-damping time T1 applied for the total storage duration. 0 disables T1 decay."
+                ),
+            },
+            "t2_ticks": {
+                "type": "number",
+                "min": 0,
+                "default": 0,
+                "label": "Coherence time T2",
+                "unit": "simulation ticks",
+                "description": (
+                    "Coherence time T2 (dephasing plus T1 contribution); requires T2 <= 2*T1 when both are set. "
+                    "0 disables dephasing."
                 ),
             },
             "delay": {
@@ -199,6 +250,18 @@ COMPONENT_MANIFEST = {
                 "description": (
                     "1 = reject-when-busy (default). Values > 1 enable a bounded per-side queue "
                     "matching arrivals by swap_request_id."
+                ),
+            },
+            "visibility": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Bell-measurement visibility",
+                "unit": "[0, 1]",
+                "description": (
+                    "Interference visibility V: with probability V the ideal Bell measurement is performed; "
+                    "otherwise the outcome is uniform and both qubits are discarded. V = 1 is ideal."
                 ),
             },
             "queue_ttl": {
@@ -355,6 +418,27 @@ COMPONENT_MANIFEST = {
                     "projective measurement (X, Y, Z each with probability p/3; no error with probability 1 - p)."
                 ),
             },
+            "detector_efficiency": {
+                "type": "number",
+                "gt": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Detector efficiency",
+                "unit": "(0, 1]",
+                "description": "Probability that an arriving qubit is detected. Missed qubits leave no outcome.",
+            },
+            "dark_count_rate": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Dark-count rate",
+                "unit": "per tick",
+                "description": (
+                    "Probability per simulation tick of a spurious click without pair ID. "
+                    "Dark counts are paired by arrival order by the Joint Outcome Counter."
+                ),
+            },
         },
     },
     "measurer_memory_paired": {
@@ -424,6 +508,27 @@ COMPONENT_MANIFEST = {
                 "description": (
                     "Local single-qubit Pauli depolarization p applied immediately before "
                     "projective measurement (X, Y, Z each with probability p/3; no error with probability 1 - p)."
+                ),
+            },
+            "detector_efficiency": {
+                "type": "number",
+                "gt": 0.0,
+                "max": 1.0,
+                "default": 1.0,
+                "label": "Detector efficiency",
+                "unit": "(0, 1]",
+                "description": "Probability that an arriving qubit is detected. Missed qubits leave no outcome.",
+            },
+            "dark_count_rate": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0,
+                "default": 0.0,
+                "label": "Dark-count rate",
+                "unit": "per tick",
+                "description": (
+                    "Probability per simulation tick of a spurious click without pair ID. "
+                    "Dark counts are paired by arrival order by the Joint Outcome Counter."
                 ),
             },
         },

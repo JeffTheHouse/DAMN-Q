@@ -459,6 +459,7 @@
       if (conn.delay) parts.push(`d=${conn.delay}`);
       if (conn.loss_p) parts.push(`L=${conn.loss_p}`);
       if (conn.depolarization_p) parts.push(`p=${conn.depolarization_p}`);
+      if (conn.length_km) parts.push(`${conn.length_km} km`);
       if (parts.length || isSelected) {
         const mx = (p1.x + p2.x) / 2;
         const my = (p1.y + p2.y) / 2;
@@ -737,6 +738,34 @@
           1,
           depolSpec.description
         );
+        const lengthSpec = chParams.length_km || {};
+        const attSpec = chParams.attenuation_db_per_km || {};
+        const couplingSpec = chParams.coupling_loss_db || {};
+        addNumericConnField(
+          conn,
+          "length_km",
+          `${lengthSpec.label || "Fibre length"} (${lengthSpec.unit || "km"})`,
+          0,
+          undefined,
+          lengthSpec.description
+        );
+        addNumericConnField(
+          conn,
+          "attenuation_db_per_km",
+          `${attSpec.label || "Fibre attenuation"} (${attSpec.unit || "dB/km"})`,
+          0,
+          undefined,
+          attSpec.description,
+          { fallback: 0.2, keepZero: true }
+        );
+        addNumericConnField(
+          conn,
+          "coupling_loss_db",
+          `${couplingSpec.label || "Coupling loss"} (${couplingSpec.unit || "dB"})`,
+          0,
+          undefined,
+          couplingSpec.description
+        );
       }
 
       const delBtn = document.createElement("button");
@@ -838,7 +867,7 @@
     els.inspectorBody.appendChild(measField);
   }
 
-  function addNumericConnField(conn, key, labelText, min, max, description = "") {
+  function addNumericConnField(conn, key, labelText, min, max, description = "", options = {}) {
     const field = document.createElement("div");
     field.className = "field";
     const id = `conn-${key}`;
@@ -849,12 +878,15 @@
     input.step = "any";
     if (min !== undefined) input.min = String(min);
     if (max !== undefined) input.max = String(max);
-    input.value = String(conn[key] ?? 0);
+    // `fallback` is the backend default shown when the key is absent; `keepZero` keeps an
+    // explicit 0 in the document (needed when the default is non-zero).
+    const fallback = options.fallback !== undefined ? options.fallback : 0;
+    input.value = String(conn[key] ?? fallback);
     input.addEventListener("input", () => {
       if (input.value === "") return;
       const val = Number(input.value);
       if (!Number.isNaN(val)) {
-        if (key !== "delay" && val === 0) {
+        if (key !== "delay" && val === 0 && !options.keepZero) {
           delete conn[key];
         } else {
           conn[key] = val;
