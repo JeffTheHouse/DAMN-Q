@@ -6,6 +6,7 @@ Serves the static web UI and exposes JSON endpoints backed directly by
 """
 
 import json
+import logging
 import mimetypes
 import urllib.parse
 import webbrowser
@@ -169,17 +170,18 @@ def _make_handler(web_dir, experiments_dir):
                     self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "errors": [err], "error": err})
                     return
                 try:
-                    result = run_experiment(doc)
+                    result = run_experiment(doc, track_flow=self.headers.get("X-DAMN-Q-Flow") == "1")
                 except ExperimentValidationError as exc:
                     self._send_json(
                         HTTPStatus.BAD_REQUEST,
                         {"ok": False, "errors": exc.errors, "error": str(exc)},
                     )
                     return
-                except ValueError as exc:
+                except Exception:
+                    logging.getLogger(__name__).exception("Workbench simulation failed")
                     self._send_json(
-                        HTTPStatus.BAD_REQUEST,
-                        {"ok": False, "errors": [str(exc)], "error": str(exc)},
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                        {"ok": False, "error": "The simulator stopped unexpectedly. Check the server log for details."},
                     )
                     return
                 self._send_json(HTTPStatus.OK, {"ok": True, "result": result})

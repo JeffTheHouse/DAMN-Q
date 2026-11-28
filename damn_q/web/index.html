@@ -40,12 +40,12 @@
     <aside class="palette" aria-label="Component palette">
       <div class="panel-header">
         <h2>Components</h2>
-        <span class="hint">Click or drag to canvas</span>
+        <span class="hint">Click or drag to add</span>
       </div>
       <div id="palette-list" class="palette-list"></div>
       <div class="legend">
-        <div class="legend-item"><span class="port-dot quantum"></span> Quantum port</div>
-        <div class="legend-item"><span class="port-dot classical"></span> Classical port</div>
+        <div class="legend-item"><span class="legend-wire quantum" aria-hidden="true"></span> Quantum wire</div>
+        <div class="legend-item"><span class="legend-wire classical" aria-hidden="true"></span> Classical wire</div>
       </div>
     </aside>
 
@@ -54,7 +54,20 @@
         <span id="wiring-text">Select a compatible input port…</span>
         <button id="btn-cancel-wire" class="btn btn-xs" type="button">Cancel (Esc)</button>
       </div>
-      <div id="canvas-viewport" class="canvas-viewport">
+      <div class="canvas-controls" role="group" aria-label="Canvas controls">
+        <button id="btn-replay-flow" class="btn flow-button" type="button" hidden>Replay qubit flow</button>
+        <div class="zoom-controls" role="group" aria-label="Graph zoom">
+          <button id="btn-zoom-out" class="btn" type="button" aria-label="Zoom out">−</button>
+          <span id="zoom-label">100%</span>
+          <button id="btn-zoom-in" class="btn" type="button" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div id="canvas-message" class="canvas-message" hidden>
+        <span id="canvas-message-text" role="status"></span>
+        <button id="btn-undo-delete" class="btn" type="button" hidden title="Undo (Ctrl or Command+Z)">Undo</button>
+        <button id="btn-dismiss-message" class="btn" type="button" aria-label="Dismiss notification">×</button>
+      </div>
+      <div id="canvas-viewport" class="canvas-viewport" tabindex="0">
         <div id="canvas-world" class="canvas-world">
           <svg id="edge-layer" class="edge-layer"></svg>
           <div id="node-layer" class="node-layer"></div>
@@ -74,10 +87,10 @@
       <section class="results-section">
         <div class="panel-header">
           <h2>Results</h2>
-          <span id="status-pill" class="status-pill neutral">Ready</span>
+          <span id="status-pill" class="status-pill neutral" role="status">Ready</span>
         </div>
         <div id="results-body" class="panel-body">
-          <p class="muted">Click <strong>Validate</strong> or <strong>Run</strong> to execute this experiment through the DAMN-Q simulator.</p>
+          <p class="muted">Run the experiment to see its results and replay qubit flow.</p>
         </div>
       </section>
     </aside>

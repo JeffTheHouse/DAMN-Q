@@ -61,14 +61,14 @@ def _worker_validate(exp_json):
     except ExperimentValidationError as exc:
         return json.dumps({"ok": False, "valid": False, "schema_version": SCHEMA_VERSION, "errors": [str(exc)]})
 
-def _worker_run(exp_json):
+def _worker_run(exp_json, track_flow=False):
     exp = json.loads(exp_json)
     # Validate first so bad input returns readable errors instead of a Python traceback
     try:
         validate_experiment(exp)
     except ExperimentValidationError as exc:
         return json.dumps({"ok": False, "errors": [str(exc)]})
-    res = run_experiment(exp)
+    res = run_experiment(exp, track_flow=track_flow)
     return json.dumps({"ok": True, "result": res})
 # --- DAMN_Q_WORKER_BOOTSTRAP_END ---
 `);
@@ -98,7 +98,8 @@ self.onmessage = async (event) => {
     }
     if (action === "run") {
       pyodide.globals.set("_req_json", JSON.stringify(payload.experiment));
-      const raw = pyodide.runPython("_worker_run(_req_json)");
+      pyodide.globals.set("_track_flow", payload.trackFlow === true);
+      const raw = pyodide.runPython("_worker_run(_req_json, _track_flow)");
       self.postMessage({ id, ok: true, data: JSON.parse(raw) });
       return;
     }

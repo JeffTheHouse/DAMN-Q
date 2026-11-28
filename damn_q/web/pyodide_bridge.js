@@ -73,11 +73,12 @@
     if (url === "/api/run") {
       const exp = JSON.parse((init && init.body) || "{}");
       try {
-        const data = await callWorker("run", { experiment: exp });
+        const trackFlow = new Headers(init?.headers).get("X-DAMN-Q-Flow") === "1";
+        const data = await callWorker("run", { experiment: exp, trackFlow });
         if (!data.ok) return jsonResponse({ ok: false, errors: data.errors || ["Run failed"] }, 400);
         return jsonResponse({ ok: true, result: data.result });
       } catch (err) {
-        return jsonResponse({ ok: false, error: err.message }, 400);
+        return jsonResponse({ ok: false, error: err.message }, 500);
       }
     }
     return origFetch(input, init);

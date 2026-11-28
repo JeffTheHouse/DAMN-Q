@@ -2,7 +2,7 @@ from Emitter import*
 from Link import*
 
 
-def connect(source, destination, delay = 0, loss_p = 0, depolarization_p = 0, sim=None):
+def connect(source, destination, delay = 0, loss_p = 0, depolarization_p = 0, sim=None, *, activity=None):
     """Bind source -> Link -> destination within one Simulation.
 
     Enforces simulation match, port kind compatibility, and port fan-out/fan-in
@@ -47,6 +47,7 @@ def connect(source, destination, delay = 0, loss_p = 0, depolarization_p = 0, si
         loss_p,
         sim=link_sim,
         kind=link_kind,
+        activity=activity,
     )
     bind(source, link.ch_in)
     try:

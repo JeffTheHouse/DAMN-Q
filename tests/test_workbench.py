@@ -36,12 +36,12 @@ def _get(url):
         return exc.code, exc.headers.get("Content-Type", ""), exc.read()
 
 
-def _post_json(url, payload):
+def _post_json(url, payload, *, headers=None):
     body = json.dumps(payload).encode("utf-8") if not isinstance(payload, bytes) else payload
     req = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
     try:
@@ -101,6 +101,27 @@ def test_workbench_validate_endpoint_reports_errors(workbench_url):
     status_malformed, payload_malformed = _post_json(f"{workbench_url}/api/run", b"{not-json")
     assert status_malformed == 400
     assert payload_malformed["ok"] is False
+
+
+def test_workbench_wire_flow_is_optional_and_excludes_lost_or_late_qubits(workbench_url):
+    doc = json.loads(_get(f"{workbench_url}/api/examples/repeater_ideal.json")[2])
+    doc["connections"][0]["loss_p"] = 1.0
+    doc["run"]["until"] = 105
+
+    status, payload = _post_json(
+        f"{workbench_url}/api/run", doc, headers={"X-DAMN-Q-Flow": "1"}
+    )
+    assert status == 200
+    tracked = payload["result"]
+    by_link = {item["connection"]: item for item in tracked.pop("wire_activity")}
+    assert by_link[0] == {"connection": 0, "delivered": 0, "first_delivery_tick": None}
+    assert by_link[1] == {"connection": 1, "delivered": 1, "first_delivery_tick": 105}
+    assert sum(entry["delivered"] for entry in by_link.values()) == 3
+    assert len(by_link) == 9
+
+    status, ordinary = _post_json(f"{workbench_url}/api/run", doc)
+    assert status == 200
+    assert ordinary["result"] == tracked
 
 
 def test_workbench_release_gate_edit_run_export_cli_rerun_matches_analytic(workbench_url, tmp_path):

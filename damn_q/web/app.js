@@ -1,8 +1,22 @@
 (() => {
   "use strict";
 
-  const POS_SCALE_X = 1.45;
-  const POS_SCALE_Y = 1.65;
+  const POS_SCALE_X = 2.08;
+  const POS_SCALE_Y = 2;
+  const MAX_FLOW_PULSES = 24;
+  const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const MODULE_STYLES = {
+    source: ["Source", "✦"],
+    quantum_memory: ["Memory", "▤"],
+    entanglement_swapper: ["Bell swap", "⋈"],
+    measurer: ["Measure", "⊙"],
+    orchestrator: ["Swap control", "⇄"],
+    pauli_corrector: ["Pauli correction", "±"],
+    measurer_memory_paired: ["Triggered measure", "◈"],
+    classic_data_reader: ["Outcome counter", "#"],
+    detector_module: ["Arrival monitor", "≋"],
+    endpoint_probe: ["State probe", "◎"],
+  };
   const POS_OFFSET_X = 40;
   const POS_OFFSET_Y = 30;
 
@@ -13,6 +27,12 @@
     selected: null, // { type: "component", id } | { type: "connection", index } | null
     wiring: null,   // { component, port, kind } | null
     lastResult: null,
+    pendingRun: false,
+    undoRemoval: null,
+    zoom: 1,
+    flow: null,
+    flowTimeout: null,
+    graphRevision: 0,
   };
 
   const els = {
@@ -25,6 +45,14 @@
     runUntil: document.getElementById("run-until"),
     runSeed: document.getElementById("run-seed"),
     btnFit: document.getElementById("btn-fit"),
+    zoomIn: document.getElementById("btn-zoom-in"),
+    zoomOut: document.getElementById("btn-zoom-out"),
+    zoomLabel: document.getElementById("zoom-label"),
+    btnReplay: document.getElementById("btn-replay-flow"),
+    canvasMessage: document.getElementById("canvas-message"),
+    canvasMessageText: document.getElementById("canvas-message-text"),
+    btnUndo: document.getElementById("btn-undo-delete"),
+    btnDismiss: document.getElementById("btn-dismiss-message"),
     btnValidate: document.getElementById("btn-validate"),
     btnRun: document.getElementById("btn-run"),
     paletteList: document.getElementById("palette-list"),
@@ -121,6 +149,8 @@
   }
 
   function setExperiment(doc) {
+    dismissCanvasMessage();
+    invalidateFlow();
     state.doc = JSON.parse(JSON.stringify(doc));
     ensurePositions(state.doc);
     state.selected = null;
@@ -129,7 +159,7 @@
     syncToolbarFromDoc();
     setStatus("neutral", "Ready");
     els.resultsBody.innerHTML =
-      '<p class="muted">Click <strong>Validate</strong> or <strong>Run</strong> to execute this experiment through the DAMN-Q simulator.</p>';
+      '<p class="muted">Run the experiment to see its results and replay qubit flow.</p>';
     renderAll();
   }
 
@@ -153,11 +183,15 @@
       section.appendChild(title);
 
       for (const [ctype, spec] of entries) {
-        const item = document.createElement("div");
+        const item = document.createElement("button");
         item.className = "palette-item";
+        item.type = "button";
         item.draggable = true;
         item.dataset.ctype = ctype;
-        item.innerHTML = `<span>${spec.label}</span><span class="palette-item-add">+</span>`;
+        item.dataset.family = cat;
+        const [, icon] = MODULE_STYLES[ctype] || ["", "□"];
+        item.innerHTML = `<span class="module-mark" aria-hidden="true">${icon}</span><span class="palette-item-name">${escapeHtml(spec.label)}</span><span class="palette-item-add" aria-hidden="true">+</span>`;
+        item.setAttribute("aria-label", `Add ${spec.label}`);
         item.addEventListener("click", () => addComponent(ctype));
         item.addEventListener("dragstart", (e) => {
           e.dataTransfer.setData("text/plain", ctype);
@@ -170,6 +204,8 @@
 
   function addComponent(ctype, canvasPos = null) {
     if (!state.doc) return;
+    dismissCanvasMessage();
+    invalidateFlow();
     const id = nextComponentId(ctype);
     let x = 220;
     let y = 180;
@@ -189,24 +225,25 @@
     });
     state.selected = { type: "component", id };
     renderAll();
+    focusComponent(id);
   }
 
   function summarizeComponent(comp) {
     const p = comp.params || {};
     if (comp.type === "quantum_memory") {
-      return `p=${p.depolarization_p ?? 0}/tick cap=${p.capacity ?? 100} ${p.fifo === 0 ? "LIFO" : "FIFO"}`;
+      return `${p.capacity ?? 100} slots · ${p.fifo === 0 ? "LIFO" : "FIFO"}`;
     }
     if (comp.type === "source") {
-      return `T=${p.delay ?? 1} ${p.type === 1 ? "|0>" : "|Phi+>"}`;
+      return `${p.type === 1 ? "|0⟩" : "Bell pair"} · every ${p.delay ?? 1} ticks`;
     }
     if (comp.type === "entanglement_swapper" || comp.type === "pauli_corrector") {
-      return `out_delay=${p.delay ?? 0}`;
+      return `Output delay · ${p.delay ?? 0} ticks`;
     }
     if (comp.type === "measurer" || comp.type === "measurer_memory_paired") {
-      return `out_delay=${p.delay ?? 0} x_p=${p.x_basis_p ?? 0}`;
+      return p.x_basis_p ? `X basis · ${Math.round(p.x_basis_p * 100)}%` : "Z basis";
     }
     if (comp.type === "detector_module") {
-      return `trace=${p.trace ?? 0}`;
+      return p.trace ? "Arrivals + trace" : "Arrivals only";
     }
     return "";
   }
@@ -289,6 +326,14 @@
       const node = document.createElement("div");
       node.className = "node";
       node.dataset.compId = comp.id;
+      node.dataset.family = spec?.category || "other";
+      node.tabIndex = 0;
+      node.setAttribute("role", "group");
+      node.setAttribute("aria-label", `${spec?.label || comp.type}, ${comp.id}`);
+      node.addEventListener("focus", () => {
+        state.selected = { type: "component", id: comp.id };
+        renderSelectionAndInspector();
+      });
       if (state.selected && state.selected.type === "component" && state.selected.id === comp.id) {
         node.classList.add("selected");
       }
@@ -297,7 +342,19 @@
 
       const header = document.createElement("div");
       header.className = "node-header";
-      header.innerHTML = `<div class="node-id">${escapeHtml(comp.id)}</div><div class="node-type">${escapeHtml(spec ? spec.label : comp.type)}</div>`;
+      const [shortName, icon] = MODULE_STYLES[comp.type] || [spec?.label || comp.type, "□"];
+      header.innerHTML = `<span class="module-mark" aria-hidden="true">${icon}</span><div class="node-heading"><div class="node-type">${escapeHtml(shortName)}</div><div class="node-id" title="${escapeHtml(comp.id)}">${escapeHtml(comp.id)}</div></div>`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "node-remove";
+      remove.title = "Delete component (Del)";
+      remove.setAttribute("aria-label", `Delete component ${comp.id}`);
+      remove.textContent = "×";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteComponent(comp.id);
+      });
+      header.appendChild(remove);
       node.appendChild(header);
 
       const summary = summarizeComponent(comp);
@@ -317,7 +374,8 @@
 
       if (spec && spec.ports) {
         for (const [pname, pspec] of Object.entries(spec.ports)) {
-          const portEl = document.createElement("div");
+          const portEl = document.createElement("button");
+          portEl.type = "button";
           portEl.className = "port";
           portEl.dataset.compId = comp.id;
           portEl.dataset.port = pname;
@@ -327,7 +385,11 @@
           const portDisplay = pspec.label || pname;
           const msgTag = pspec.message_type ? `, ${pspec.message_type}` : "";
           portEl.title = `${comp.id}.${pname} — ${portDisplay} (${pspec.direction}, ${pspec.kind}${msgTag})${active ? "" : " [inactive]"}`;
-          if (!active) portEl.classList.add("inactive");
+          portEl.setAttribute("aria-label", `${comp.id}: ${portDisplay} (${pspec.kind} ${pspec.direction})`);
+          if (!active) {
+            portEl.classList.add("inactive");
+            portEl.setAttribute("aria-disabled", "true");
+          }
 
           const dot = `<span class="port-dot ${pspec.kind}"></span>`;
           const label = `<span class="port-name">${escapeHtml(portDisplay)}</span>`;
@@ -360,7 +422,7 @@
 
       // Select & drag
       node.addEventListener("mousedown", (e) => {
-        if (e.target.closest(".port")) return;
+        if (e.button !== 0 || e.target.closest("button")) return;
         e.stopPropagation();
         state.selected = { type: "component", id: comp.id };
         renderSelectionAndInspector();
@@ -371,8 +433,8 @@
         const origTop = toCanvasY(comp.position.y);
 
         function onMove(ev) {
-          const nx = Math.max(0, origLeft + (ev.clientX - startX));
-          const ny = Math.max(0, origTop + (ev.clientY - startY));
+          const nx = Math.max(0, origLeft + (ev.clientX - startX) / state.zoom);
+          const ny = Math.max(0, origTop + (ev.clientY - startY) / state.zoom);
           node.style.left = `${nx}px`;
           node.style.top = `${ny}px`;
           comp.position.x = fromCanvasX(nx);
@@ -382,6 +444,7 @@
         function onUp() {
           window.removeEventListener("mousemove", onMove);
           window.removeEventListener("mouseup", onUp);
+          resizeWorld();
         }
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
@@ -400,8 +463,8 @@
     const worldRect = els.canvasWorld.getBoundingClientRect();
     const dotRect = dot.getBoundingClientRect();
     return {
-      x: dotRect.left - worldRect.left + dotRect.width / 2,
-      y: dotRect.top - worldRect.top + dotRect.height / 2,
+      x: (dotRect.left - worldRect.left + dotRect.width / 2) / state.zoom,
+      y: (dotRect.top - worldRect.top + dotRect.height / 2) / state.zoom,
     };
   }
 
@@ -410,6 +473,93 @@
     const srcSpec = srcComp ? getSpec(srcComp.type) : null;
     const p = srcSpec && srcSpec.ports ? srcSpec.ports[conn.from.port] : null;
     return p ? p.kind : "classical";
+  }
+
+  function clearFlow() {
+    window.clearTimeout(state.flowTimeout);
+    state.flowTimeout = null;
+    const hadFlow = state.flow !== null;
+    state.flow = null;
+    els.btnReplay.hidden = true;
+    els.edgeLayer.classList.remove("replaying");
+    if (hadFlow && state.doc) renderEdges();
+  }
+
+  function invalidateFlow() {
+    state.graphRevision += 1;
+    clearFlow();
+  }
+
+  function getWireActivity(index) {
+    return state.flow?.get(index);
+  }
+
+  function showRunFlow(result, replayCurrentGraph) {
+    if (!Array.isArray(result.wire_activity)) return;
+    const active = result.wire_activity.filter((wire) => wire.delivered > 0);
+    const card = document.createElement("div");
+    card.className = "result-card";
+    const heading = document.createElement("h3");
+    heading.textContent = "Qubit flow";
+    const description = document.createElement("p");
+    description.className = "muted flow-description";
+    if (active.length) {
+      const total = active.reduce((sum, wire) => sum + wire.delivered, 0);
+      description.textContent = `${total.toLocaleString()} qubit deliveries across ${active.length} ${active.length === 1 ? "wire" : "wires"}.`;
+      if (!replayCurrentGraph) description.textContent += " Run the edited graph to replay its flow.";
+    } else {
+      description.textContent = "No qubits reached the far end of a wire during this run.";
+    }
+    card.append(heading, description);
+    els.resultsBody.prepend(card);
+
+    if (!active.length || !replayCurrentGraph) return;
+    state.flow = new Map(active.map((wire) => [wire.connection, wire]));
+    els.btnReplay.hidden = false;
+    renderEdges();
+    replayFlow();
+  }
+
+  function replayFlow() {
+    if (!state.flow?.size) return;
+    window.clearTimeout(state.flowTimeout);
+    els.edgeLayer.querySelectorAll(".flow-pulse").forEach((pulse) => pulse.remove());
+    els.edgeLayer.classList.add("replaying");
+
+    if (!REDUCED_MOTION.matches) {
+      const wires = [...state.flow.values()]
+        .sort((a, b) => a.first_delivery_tick - b.first_delivery_tick)
+        .slice(0, MAX_FLOW_PULSES);
+      const first = wires[0].first_delivery_tick;
+      const span = Math.max(1, wires.at(-1).first_delivery_tick - first);
+      const svgNS = "http://www.w3.org/2000/svg";
+      for (const wire of wires) {
+        const edge = els.edgeLayer.querySelector(`[data-wire="${wire.connection}"]`);
+        if (!edge) continue;
+        const pulse = document.createElementNS(svgNS, "circle");
+        pulse.setAttribute("class", "flow-pulse");
+        pulse.setAttribute("r", "5");
+        pulse.setAttribute("aria-hidden", "true");
+        const motion = document.createElementNS(svgNS, "animateMotion");
+        motion.setAttribute("path", edge.getAttribute("d"));
+        motion.setAttribute("dur", "0.68s");
+        motion.setAttribute("begin", "indefinite");
+        const visibility = document.createElementNS(svgNS, "set");
+        visibility.setAttribute("attributeName", "visibility");
+        visibility.setAttribute("to", "visible");
+        visibility.setAttribute("dur", "0.68s");
+        visibility.setAttribute("begin", "indefinite");
+        pulse.append(motion, visibility);
+        els.edgeLayer.appendChild(pulse);
+        const offset = ((wire.first_delivery_tick - first) / span) * 0.65;
+        motion.beginElementAt?.(offset);
+        visibility.beginElementAt?.(offset);
+      }
+    }
+    state.flowTimeout = window.setTimeout(() => {
+      els.edgeLayer.classList.remove("replaying");
+      els.edgeLayer.querySelectorAll(".flow-pulse").forEach((pulse) => pulse.remove());
+    }, 1500);
   }
 
   function renderEdges() {
@@ -438,6 +588,7 @@
 
       const path = document.createElementNS(svgNS, "path");
       path.setAttribute("d", d);
+      path.dataset.wire = idx;
       const isSelected = state.selected && state.selected.type === "connection" && state.selected.index === idx;
       const srcComp = getComp(conn.from.component);
       const dstComp = getComp(conn.to.component);
@@ -453,6 +604,14 @@
 
       els.edgeLayer.appendChild(hit);
       els.edgeLayer.appendChild(path);
+
+      const activity = getWireActivity(idx);
+      if (activity) {
+        const title = document.createElementNS(svgNS, "title");
+        title.textContent = `${activity.delivered} qubit deliveries · first at tick ${activity.first_delivery_tick}`;
+        hit.appendChild(title);
+        path.classList.add("has-flow");
+      }
 
       // Show delay / noise badge if non-zero or selected
       const parts = [];
@@ -486,15 +645,15 @@
     const comp = getComp(compId);
     if (!state.wiring) {
       if (pspec.direction !== "out") {
-        setStatus("neutral", "Start wiring from an output port (right side)");
+        showInputError("Start from an output port on the right side of a module.");
         return;
       }
       if (!isPortActive(comp, pspec)) {
-        setStatus("err", `${compId}.${portName} is inactive under current parameters`);
+        showInputError(`${compId}.${portName} is inactive under current parameters`);
         return;
       }
       if (pspec.max_connections != null && portConnectionCount(compId, portName, "out") >= pspec.max_connections) {
-        setStatus("err", `${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
+        showInputError(`${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
         return;
       }
       state.wiring = { component: compId, port: portName, kind: pspec.kind };
@@ -502,13 +661,14 @@
       els.wiringText.textContent = `Wiring ${compId}.${portName}${msgLabel} -> click a compatible input port`;
       els.wiringBanner.hidden = false;
       renderNodes();
+      focusPort(compId, portName);
       return;
     }
 
     if (pspec.direction === "in") {
       const verdict = checkWireAllowed(state.wiring.component, state.wiring.port, compId, portName);
       if (!verdict.ok) {
-        setStatus("err", verdict.reason);
+        showInputError(verdict.reason);
         return;
       }
       const newConn = {
@@ -516,6 +676,8 @@
         to: { component: compId, port: portName },
         delay: 0,
       };
+      dismissCanvasMessage();
+      invalidateFlow();
       state.doc.connections.push(newConn);
       state.selected = { type: "connection", index: state.doc.connections.length - 1 };
       state.wiring = null;
@@ -527,17 +689,24 @@
 
     // Clicked another output port -> switch source if allowed
     if (!isPortActive(comp, pspec)) {
-      setStatus("err", `${compId}.${portName} is inactive under current parameters`);
+      showInputError(`${compId}.${portName} is inactive under current parameters`);
       return;
     }
     if (pspec.max_connections != null && portConnectionCount(compId, portName, "out") >= pspec.max_connections) {
-      setStatus("err", `${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
+      showInputError(`${compId}.${portName} already has its maximum (${pspec.max_connections}) connection`);
       return;
     }
     state.wiring = { component: compId, port: portName, kind: pspec.kind };
     const msgLabel = pspec.message_type ? ` (${pspec.message_type})` : ` (${pspec.kind})`;
     els.wiringText.textContent = `Wiring ${compId}.${portName}${msgLabel} -> click a compatible input port`;
     renderNodes();
+    focusPort(compId, portName);
+  }
+
+  function focusPort(compId, portName) {
+    els.nodeLayer.querySelector(
+      `.port[data-comp-id="${CSS.escape(compId)}"][data-port="${CSS.escape(portName)}"]`
+    )?.focus({ preventScroll: true });
   }
 
   function cancelWiring() {
@@ -551,11 +720,13 @@
     const trimmed = newId.trim();
     if (!trimmed || trimmed === oldId) return false;
     if (state.doc.components.some((c) => c.id === trimmed)) {
-      setStatus("err", `Duplicate ID "${trimmed}"`);
+      showInputError(`A module already uses the ID "${trimmed}".`);
       return false;
     }
     const comp = getComp(oldId);
     if (!comp) return false;
+    dismissCanvasMessage();
+    invalidateFlow();
     comp.id = trimmed;
     for (const conn of state.doc.connections) {
       if (conn.from.component === oldId) conn.from.component = trimmed;
@@ -571,16 +742,83 @@
     return true;
   }
 
+  function focusComponent(compId) {
+    els.nodeLayer.querySelector(`.node[data-comp-id="${CSS.escape(compId)}"]`)?.focus();
+  }
+
+  function dismissCanvasMessage() {
+    state.undoRemoval = null;
+    els.canvasMessage.hidden = true;
+    els.btnUndo.hidden = true;
+  }
+
+  function showCanvasMessage(message, undo = null) {
+    state.undoRemoval = undo;
+    els.canvasMessage.dataset.kind = undo ? "removed" : "input-error";
+    els.canvasMessageText.textContent = message;
+    els.btnUndo.hidden = !undo;
+    els.canvasMessage.hidden = false;
+  }
+
+  function showInputError(message) {
+    showCanvasMessage(`That's not it boss. ${message}`);
+  }
+
+  function deleteSelection() {
+    if (state.selected?.type === "component") deleteComponent(state.selected.id);
+    if (state.selected?.type === "connection") deleteConnection(state.selected.index);
+  }
+
   function deleteComponent(compId) {
-    state.doc.components = state.doc.components.filter((c) => c.id !== compId);
-    state.doc.connections = state.doc.connections.filter(
+    const comp = getComp(compId);
+    if (!comp) return;
+    const previous = {
+      components: state.doc.components,
+      connections: state.doc.connections,
+      measurements: state.doc.measurements,
+    };
+    state.doc.components = previous.components.filter((c) => c !== comp);
+    state.doc.connections = previous.connections.filter(
       (conn) => conn.from.component !== compId && conn.to.component !== compId
     );
-    state.doc.measurements = state.doc.measurements.filter(
+    state.doc.measurements = previous.measurements.filter(
       (m) => !Array.isArray(m.probes) || !m.probes.includes(compId)
     );
+    const wireCount = previous.connections.length - state.doc.connections.length;
+    finishRemoval(wireCount ? `Removed ${compId} and ${wireCount} connected ${wireCount === 1 ? "wire" : "wires"}.` : `Removed ${compId}.`, () => {
+      Object.assign(state.doc, previous);
+      state.selected = { type: "component", id: compId };
+    });
+  }
+
+  function deleteConnection(index) {
+    if (!state.doc.connections[index]) return;
+    const previous = state.doc.connections;
+    state.doc.connections = previous.filter((_, i) => i !== index);
+    finishRemoval("Removed wire.", () => {
+      state.doc.connections = previous;
+      state.selected = { type: "connection", index };
+    });
+  }
+
+  function finishRemoval(message, undo) {
+    invalidateFlow();
+    state.wiring = null;
     state.selected = null;
+    els.wiringBanner.hidden = true;
     renderAll();
+    showCanvasMessage(message, undo);
+    els.btnUndo.focus();
+  }
+
+  function undoRemoval() {
+    if (!state.undoRemoval) return;
+    invalidateFlow();
+    state.undoRemoval();
+    dismissCanvasMessage();
+    renderAll();
+    if (state.selected?.type === "component") focusComponent(state.selected.id);
+    else els.canvasViewport.focus();
   }
 
   function renderInspector() {
@@ -772,11 +1010,7 @@
       delBtn.className = "btn btn-danger";
       delBtn.type = "button";
       delBtn.textContent = "Delete Connection";
-      delBtn.addEventListener("click", () => {
-        state.doc.connections.splice(idx, 1);
-        state.selected = null;
-        renderAll();
-      });
+      delBtn.addEventListener("click", () => deleteConnection(idx));
       els.inspectorBody.appendChild(delBtn);
       return;
     }
@@ -840,6 +1074,7 @@
       rm.type = "button";
       rm.textContent = "×";
       rm.addEventListener("click", () => {
+        dismissCanvasMessage();
         state.doc.measurements.splice(mIdx, 1);
         renderInspector();
       });
@@ -853,6 +1088,7 @@
       addM.type = "button";
       addM.textContent = "+ Add Bell Fidelity";
       addM.addEventListener("click", () => {
+        dismissCanvasMessage();
         state.doc.measurements.push({ type: "bell_fidelity", probes: [probes[0], probes[1]] });
         renderInspector();
       });
@@ -916,12 +1152,19 @@
 
   function renderAll() {
     renderNodes();
+    resizeWorld();
     renderEdges();
     renderInspector();
   }
 
-  function renderErrors(errors) {
-    setStatus("err", "Invalid");
+  function renderErrors(errors, system = false) {
+    setStatus("err", system ? "Run unavailable" : "Needs attention");
+    const heading = document.createElement("h3");
+    heading.className = "error-title";
+    heading.textContent = system ? "We are not that good yet." : "That's not it boss.";
+    const card = document.createElement("div");
+    card.className = `error-card ${system ? "system-error" : "input-error"}`;
+    card.setAttribute("role", "alert");
     const ul = document.createElement("ul");
     ul.className = "error-list";
     for (const msg of errors) {
@@ -930,10 +1173,11 @@
       ul.appendChild(li);
     }
     els.resultsBody.innerHTML = "";
-    els.resultsBody.appendChild(ul);
+    card.append(heading, ul);
+    els.resultsBody.appendChild(card);
   }
 
-  function renderRunResult(result) {
+  function renderRunResult(result, replayCurrentGraph) {
     state.lastResult = result;
     setStatus("ok", "Completed");
     const frag = document.createDocumentFragment();
@@ -1015,40 +1259,73 @@
 
     els.resultsBody.innerHTML = "";
     els.resultsBody.appendChild(frag);
+    showRunFlow(result, replayCurrentGraph);
+
   }
 
   async function validateCurrent() {
-    const doc = buildExportDocument();
-    const resp = await fetch("/api/validate", {
+    if (!state.doc) return false;
+    const current = state.doc;
+    try {
+      const data = await requestExperiment("/api/validate", buildExportDocument());
+      if (state.doc !== current) return false;
+      if (!data.ok) {
+        renderErrors(data.errors);
+        return false;
+      }
+      setStatus("ok", `Valid (schema ${data.schema_version})`);
+      els.resultsBody.innerHTML = `<p class="muted">Experiment graph passed static validation (schema ${escapeHtml(data.schema_version)}).</p>`;
+      return true;
+    } catch (error) {
+      if (state.doc === current) renderErrors([error.message], true);
+      return false;
+    }
+  }
+
+  async function requestExperiment(path, doc) {
+    const headers = { "Content-Type": "application/json" };
+    if (path === "/api/run") headers["X-DAMN-Q-Flow"] = "1";
+    const resp = await fetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(doc),
     });
     const data = await resp.json();
     if (!resp.ok || !data.ok) {
-      renderErrors(data.errors || [data.error || "Validation failed"]);
-      return false;
+      const errors = data.errors || [data.error || "The request could not be completed."];
+      if (resp.status >= 500) throw new Error(errors.join(" "));
+      return { ok: false, errors };
     }
-    setStatus("ok", `Valid (schema ${data.schema_version})`);
-    els.resultsBody.innerHTML = `<p class="muted">Experiment graph passed static validation (schema ${escapeHtml(data.schema_version)}).</p>`;
-    return true;
+    return data;
   }
 
   async function runCurrent() {
-    setStatus("neutral", "Running…");
+    if (!state.doc || state.pendingRun) return null;
+    const current = state.doc;
     const doc = buildExportDocument();
-    const resp = await fetch("/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(doc),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) {
-      renderErrors(data.errors || [data.error || "Run failed"]);
+    const revision = state.graphRevision;
+    state.pendingRun = true;
+    els.btnRun.disabled = true;
+    els.btnValidate.disabled = true;
+    clearFlow();
+    setStatus("neutral", "Running…");
+    try {
+      const data = await requestExperiment("/api/run", doc);
+      if (state.doc !== current) return null;
+      if (!data.ok) {
+        renderErrors(data.errors);
+        return null;
+      }
+      renderRunResult(data.result, revision === state.graphRevision);
+      return data.result;
+    } catch (error) {
+      if (state.doc === current) renderErrors([error.message], true);
       return null;
+    } finally {
+      state.pendingRun = false;
+      els.btnRun.disabled = false;
+      els.btnValidate.disabled = false;
     }
-    renderRunResult(data.result);
-    return data.result;
   }
 
   function exportCurrent() {
@@ -1070,30 +1347,59 @@
     return jsonText;
   }
 
-  function fitView() {
-    if (!state.doc || !state.doc.components.length) return;
-    let minX = Infinity;
-    let minY = Infinity;
-    for (const c of state.doc.components) {
-      minX = Math.min(minX, toCanvasX(c.position.x));
-      minY = Math.min(minY, toCanvasY(c.position.y));
-    }
-    els.canvasViewport.scrollTo({
-      left: Math.max(0, minX - 24),
-      top: Math.max(0, minY - 24),
-      behavior: "smooth",
-    });
+  function graphBounds() {
+    const boxes = [...els.nodeLayer.children].map((node) => ({
+      x: node.offsetLeft,
+      y: node.offsetTop,
+      right: node.offsetLeft + node.offsetWidth,
+      bottom: node.offsetTop + node.offsetHeight,
+    }));
+    if (!boxes.length) return null;
+    return {
+      x: Math.min(...boxes.map((b) => b.x)),
+      y: Math.min(...boxes.map((b) => b.y)),
+      right: Math.max(...boxes.map((b) => b.right)),
+      bottom: Math.max(...boxes.map((b) => b.bottom)),
+    };
+  }
+
+  function resizeWorld() {
+    const bounds = graphBounds();
+    els.canvasWorld.style.width = `${Math.max(els.canvasViewport.clientWidth / state.zoom, (bounds?.right ?? 0) + 44)}px`;
+    els.canvasWorld.style.height = `${Math.max(els.canvasViewport.clientHeight / state.zoom, (bounds?.bottom ?? 0) + 44)}px`;
+  }
+
+  function setZoom(value) {
+    state.zoom = Math.min(1.5, Math.max(0.25, value));
+    els.canvasWorld.style.zoom = String(state.zoom);
+    els.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    resizeWorld();
+    renderEdges();
+  }
+
+  function fitView(minZoom = 0.25) {
+    const bounds = graphBounds();
+    if (!bounds) return;
+    setZoom(Math.max(minZoom, Math.min(
+      1,
+      (els.canvasViewport.clientWidth - 42) / (bounds.right - bounds.x),
+      (els.canvasViewport.clientHeight - 44) / (bounds.bottom - bounds.y)
+    )));
+    els.canvasViewport.scrollTo(
+      Math.max(0, bounds.x * state.zoom - 20),
+      Math.max(0, bounds.y * state.zoom - 20)
+    );
   }
 
   async function loadExample(filename) {
-    const resp = await fetch(`/api/examples/${encodeURIComponent(filename)}`);
-    if (!resp.ok) {
-      setStatus("err", "Load failed");
-      return;
+    try {
+      const resp = await fetch(`/api/examples/${encodeURIComponent(filename)}`);
+      if (!resp.ok) throw new Error("Could not load this example. Try again.");
+      setExperiment(await resp.json());
+      fitView(0.72);
+    } catch (error) {
+      renderErrors([error.message], true);
     }
-    const doc = await resp.json();
-    setExperiment(doc);
-    fitView();
   }
 
   function escapeHtml(str) {
@@ -1118,7 +1424,14 @@
       if (!file) return;
       try {
         const text = await file.text();
-        setExperiment(JSON.parse(text));
+        const imported = JSON.parse(text);
+        if (!imported || !Array.isArray(imported.components)
+            || imported.components.some((component) => !component || typeof component !== "object")
+            || (Array.isArray(imported.connections) && imported.connections.some((conn) => !conn?.from || !conn?.to))) {
+          renderErrors(["Choose a DAMN-Q experiment with components and valid connection endpoints."]);
+          return;
+        }
+        setExperiment(imported);
         fitView();
         // Validate immediately so unknown components or schema problems are reported at import time
         await validateCurrent();
@@ -1133,6 +1446,20 @@
     els.btnValidate.addEventListener("click", () => validateCurrent());
     els.btnRun.addEventListener("click", () => runCurrent());
     els.btnFit.addEventListener("click", () => fitView());
+    els.btnReplay.addEventListener("click", replayFlow);
+    for (const element of [els.runUntil, els.runSeed, els.inspectorBody]) {
+      element.addEventListener("input", invalidateFlow, true);
+    }
+    els.zoomIn.addEventListener("click", () => setZoom(state.zoom * 1.2));
+    els.zoomOut.addEventListener("click", () => setZoom(state.zoom / 1.2));
+    els.btnUndo.addEventListener("click", undoRemoval);
+    els.btnDismiss.addEventListener("click", () => {
+      dismissCanvasMessage();
+      els.canvasViewport.focus();
+    });
+    window.addEventListener("resize", () => {
+      if (state.doc) resizeWorld();
+    });
     els.btnCancelWire.addEventListener("click", () => cancelWiring());
     els.btnSelectExp.addEventListener("click", () => {
       state.selected = null;
@@ -1169,11 +1496,22 @@
       const ctype = e.dataTransfer.getData("text/plain");
       if (!ctype || !getSpec(ctype)) return;
       const rect = els.canvasWorld.getBoundingClientRect();
-      addComponent(ctype, { x: e.clientX - rect.left, y: e.clientY - rect.top });
+      addComponent(ctype, { x: (e.clientX - rect.left) / state.zoom, y: (e.clientY - rect.top) / state.zoom });
     });
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") cancelWiring();
+      if (e.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z" && state.undoRemoval) {
+        e.preventDefault();
+        undoRemoval();
+        return;
+      }
+      if (!e.repeat && !e.altKey && !e.ctrlKey && !e.metaKey
+          && (e.key === "Delete" || e.key === "Backspace") && state.selected && !state.wiring) {
+        e.preventDefault();
+        deleteSelection();
+      }
     });
   }
 
@@ -1183,6 +1521,7 @@
       fetch("/api/manifest"),
       fetch("/api/examples"),
     ]);
+    if (!manResp.ok || !exResp.ok) throw new Error("The simulator could not load its components or experiments.");
     state.manifest = await manResp.json();
     const exData = await exResp.json();
     state.examples = exData.examples || [];
@@ -1217,6 +1556,6 @@
   }
 
   init().catch((err) => {
-    renderErrors([`Failed to initialize workbench: ${err.message}`]);
+    renderErrors([`Could not start the workbench. ${err.message}`], true);
   });
 })();

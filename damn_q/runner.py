@@ -249,12 +249,13 @@ def load_experiment(path):
         return json.load(f)
 
 
-def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
+def run_experiment(doc_or_path, *, seed_override=None, until_override=None, track_flow=False):
     """Validate and execute a DAMN-Q experiment, returning a JSON-serializable result.
 
     Each call builds its own Simulation, so runs never share clock, queue,
     random stream, or process-global state. Bell fidelity probes pair arrivals
-    by `pair_id` and capture joint states at delivery time.
+    by `pair_id` and capture joint states at delivery time. With track_flow,
+    the result also includes bounded per-link quantum delivery aggregates.
     """
     doc = load_experiment(doc_or_path) if isinstance(doc_or_path, (str, Path)) else dict(doc_or_path)
 
@@ -284,7 +285,8 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         instances[cid] = _instantiate_component(cid, ctype, params, sim)
         types[cid] = ctype
 
-    for conn in doc.get("connections", []):
+    wire_activity = []
+    for index, conn in enumerate(doc.get("connections", [])):
         src_obj = instances[conn["from"]["component"]]
         dst_obj = instances[conn["to"]["component"]]
         src_port = getattr(src_obj, conn["from"]["port"])
@@ -292,6 +294,10 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
         # Fibre keys are only accepted on quantum connections (schema); without them this
         # returns the connection's own delay and loss_p unchanged.
         delay, loss_p = _connection_quantum_effects(conn, tick_duration_s)
+        activity = None
+        if track_flow and src_port.kind == "quantum":
+            activity = {"connection": index, "delivered": 0, "first_delivery_tick": None}
+            wire_activity.append(activity)
         connect(
             src_port,
             dst_port,
@@ -299,6 +305,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
             loss_p=loss_p,
             depolarization_p=conn.get("depolarization_p", 0.0),
             sim=sim,
+            activity=activity,
         )
 
     # Attach delivery-time Bell fidelity recorders before running the simulation
@@ -390,6 +397,8 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
             "readers_coincidences": readers_coincidences,
         },
     }
+    if track_flow:
+        result["wire_activity"] = wire_activity
     if tick_duration_s is not None:
         result["tick_duration_s"] = tick_duration_s
         result["simulated_duration_s"] = sim.time * tick_duration_s

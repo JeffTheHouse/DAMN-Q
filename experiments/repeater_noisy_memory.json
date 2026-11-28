@@ -7,17 +7,17 @@
     "seed": 42
   },
   "components": [
-    {"id": "source_a", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 240, "y": 240}},
-    {"id": "source_b", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 760, "y": 240}},
-    {"id": "memory_a_1", "type": "quantum_memory", "params": {"depolarization_p": 0.01, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 100, "y": 240}},
-    {"id": "memory_a_2", "type": "quantum_memory", "params": {"depolarization_p": 0.02, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 380, "y": 240}},
-    {"id": "memory_b_1", "type": "quantum_memory", "params": {"depolarization_p": 0.015, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 620, "y": 240}},
-    {"id": "memory_b_2", "type": "quantum_memory", "params": {"depolarization_p": 0.025, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 900, "y": 240}},
-    {"id": "es", "type": "entanglement_swapper", "params": {"delay": 1}, "position": {"x": 500, "y": 140}},
-    {"id": "orchestrator", "type": "orchestrator", "params": {"delay": 0}, "position": {"x": 500, "y": 320}},
-    {"id": "pc", "type": "pauli_corrector", "params": {"delay": 0}, "position": {"x": 900, "y": 120}},
-    {"id": "probe_a", "type": "endpoint_probe", "params": {}, "position": {"x": 100, "y": 120}},
-    {"id": "probe_b", "type": "endpoint_probe", "params": {}, "position": {"x": 1060, "y": 120}}
+    {"id": "source_a", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 130, "y": 5}},
+    {"id": "source_b", "type": "source", "params": {"delay": 100, "type": 2}, "position": {"x": 250, "y": 5}},
+    {"id": "memory_a_1", "type": "quantum_memory", "params": {"depolarization_p": 0.01, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 10, "y": 110}},
+    {"id": "memory_a_2", "type": "quantum_memory", "params": {"depolarization_p": 0.02, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 130, "y": 110}},
+    {"id": "memory_b_1", "type": "quantum_memory", "params": {"depolarization_p": 0.015, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 250, "y": 110}},
+    {"id": "memory_b_2", "type": "quantum_memory", "params": {"depolarization_p": 0.025, "delay": 0, "capacity": 100, "fifo": 1}, "position": {"x": 370, "y": 110}},
+    {"id": "es", "type": "entanglement_swapper", "params": {"delay": 1}, "position": {"x": 130, "y": 215}},
+    {"id": "orchestrator", "type": "orchestrator", "params": {"delay": 0}, "position": {"x": 250, "y": 215}},
+    {"id": "pc", "type": "pauli_corrector", "params": {"delay": 0}, "position": {"x": 370, "y": 215}},
+    {"id": "probe_a", "type": "endpoint_probe", "params": {}, "position": {"x": 10, "y": 215}},
+    {"id": "probe_b", "type": "endpoint_probe", "params": {}, "position": {"x": 370, "y": 320}}
   ],
   "connections": [
     {"from": {"component": "source_a", "port": "out_ch_1"}, "to": {"component": "memory_a_1", "port": "ch_in_q"}, "delay": 5},

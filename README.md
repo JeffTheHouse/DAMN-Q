@@ -29,6 +29,10 @@ python -m damn_q serve --port 8765 --no-browser
 
 The workbench edits the same versioned JSON experiment graph and executes it through the same validator and runner as the CLI. Use **Import JSON** / **Export JSON** to move experiments between the browser and the command line.
 
+Use the **×** on a module, or select it and press **Delete** or **Backspace**. **Undo** restores the module and its connections.
+
+After a run, **Replay qubit flow** highlights wires with recorded qubit deliveries. It shows a representative pulse per active wire, ordered by first delivery time. Use the wire tooltip for the delivery count and tick. With reduced motion enabled, the wires highlight without moving pulses.
+
 ## Component reference
 
 Public labels, categories, ports, and units are defined in `damn_q/manifest.py`. Schema keys (`type` and port IDs) are kept stable for `schema_version: "1.0"` JSON compatibility.
