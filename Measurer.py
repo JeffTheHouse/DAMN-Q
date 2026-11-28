@@ -66,6 +66,6 @@ class Measuring_Device:
         bit = "1" if self.sim.rng.random() < 0.5 else "0"
         basis = "x" if self.sim.rng.random() < self.x_basis_p else "z"
         self.dark_counts += 1
-        out = MeasurementResult(bit, pair_id=None, basis=basis, measurement_id=mid)
+        out = MeasurementResult(bit, pair_id=None, basis=basis, measurement_id=mid, is_dark_count=True)
         self.sim.add(self.delay, lambda m=out: self.ch_out_result.emit(m))
         self._schedule_dark_count()

@@ -80,11 +80,19 @@ def main(argv=None):
         else:
             print(f"Experiment: {result['name'] or args.experiment}")
             print(f"Final time: {result['final_time']} (seed={result['seed']})")
+            coinc_map = (result.get("metrics") or {}).get("readers_coincidences") or {}
             for rid, counts in result["readers"].items():
                 print(
-                    f"Reader {rid}: 00:{counts['00']}, 01:{counts['01']}, "
+                    f"Reader {rid} (pair-ID matched): 00:{counts['00']}, 01:{counts['01']}, "
                     f"10:{counts['10']}, 11:{counts['11']}"
                 )
+                c = coinc_map.get(rid)
+                if c and (c.get("accidental_coincidences") or c.get("dark_clicks_1") or c.get("dark_clicks_2")):
+                    print(
+                        f"  Coincidences (|dt|<={c['window']}): total={c['total']} "
+                        f"(true={c['true_pair_coincidences']}, accidental={c['accidental_coincidences']}; "
+                        f"dark_clicks={c['dark_clicks_1']}/{c['dark_clicks_2']})"
+                    )
             for m in result["measurements"]:
                 if m["type"] == "bell_fidelity":
                     lat_str = f", mean_latency={m['mean_latency']}" if m.get("mean_latency") is not None else ""

@@ -56,11 +56,12 @@ class BellOutcome(str):
 class MeasurementResult(str):
     """Classical single-qubit measurement outcome (`"0"` or `"1"`)."""
 
-    def __new__(cls, bit, pair_id=None, basis=None, measurement_id=None):
+    def __new__(cls, bit, pair_id=None, basis=None, measurement_id=None, is_dark_count=False):
         obj = super().__new__(cls, bit)
         obj.pair_id = pair_id
         obj.basis = basis
         obj.measurement_id = measurement_id
+        obj.is_dark_count = bool(is_dark_count)
         return obj
 
 

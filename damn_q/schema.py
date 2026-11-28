@@ -312,5 +312,34 @@ def validate_experiment(doc):
             else:
                 errors.append(f"measurements[{idx}] has unknown type {mtype!r}.")
 
+    # Discrete per-tick memory depolarization (depolarization_p > 0) requires integer
+    # storage ticks at runtime; reject fractional delays statically when it is enabled.
+    discrete_depol_memories = [
+        cid
+        for cid, (ctype, _spec, resolved) in comp_map.items()
+        if ctype == "quantum_memory"
+        and _is_number(resolved.get("depolarization_p"))
+        and resolved["depolarization_p"] > 0.0
+    ]
+    if discrete_depol_memories:
+        mem_list = ", ".join(repr(cid) for cid in discrete_depol_memories)
+        for cid, (_ctype, _spec, resolved) in comp_map.items():
+            d = resolved.get("delay")
+            if _is_number(d) and not float(d).is_integer():
+                errors.append(
+                    f"Component {cid!r} parameter 'delay' must be an integer tick count (got {d!r}) "
+                    f"because quantum memory {mem_list} uses discrete per-tick depolarization_p > 0."
+                )
+        if isinstance(connections, list):
+            for idx, conn in enumerate(connections):
+                if not isinstance(conn, dict):
+                    continue
+                d = conn.get("delay", 0)
+                if _is_number(d) and not float(d).is_integer():
+                    errors.append(
+                        f"connections[{idx}].delay must be an integer tick count (got {d!r}) "
+                        f"because quantum memory {mem_list} uses discrete per-tick depolarization_p > 0."
+                    )
+
     if errors:
         raise ExperimentValidationError(errors)

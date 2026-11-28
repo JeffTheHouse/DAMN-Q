@@ -415,3 +415,154 @@ def test_hardware_tutorial_is_deterministic_for_fixed_seed():
     b = run_experiment(EXPERIMENTS / "repeater_tutorial_hardware.json")
     assert a["readers"] == b["readers"]
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+# ---------------------------------------------------------------- fractional timing & dark-count separation
+
+def test_fractional_delay_with_t1_t2_validates_and_runs():
+    # Continuous T1/T2 decay supports fractional storage durations (e.g. 6.5 ticks).
+    doc = load_experiment(EXPERIMENTS / "repeater_tutorial_hardware.json")
+    orch = next(c for c in doc["components"] if c["id"] == "orchestrator")
+    orch["params"]["delay"] = 0.5
+    validate_experiment(doc)
+    res = run_experiment(doc)
+    assert res["final_time"] == 100
+    assert sum(res["readers"]["reader"].values()) > 0
+
+
+def test_fractional_delay_with_discrete_memory_depolarization_rejected_by_validator():
+    doc = load_experiment(EXPERIMENTS / "repeater_noisy_memory.json")
+    orch = next(c for c in doc["components"] if c["id"] == "orchestrator")
+    orch["params"]["delay"] = 0.5
+    with pytest.raises(ExperimentValidationError, match="integer tick count"):
+        validate_experiment(doc)
+
+    # Connection fractional delay must also be rejected when discrete depolarization_p > 0.
+    doc2 = load_experiment(EXPERIMENTS / "repeater_noisy_memory.json")
+    doc2["connections"][0]["delay"] = 0.5
+    with pytest.raises(ExperimentValidationError, match="integer tick count"):
+        validate_experiment(doc2)
+
+
+def test_dark_counts_with_total_link_loss_never_inflate_pair_id_counts():
+    doc = _base_doc()
+    doc["run"]["until"] = 100
+    for c in doc["connections"]:
+        if c["from"]["component"].startswith("source_"):
+            c["loss_p"] = 1.0
+    for comp in doc["components"]:
+        if comp["type"] in ("measurer", "measurer_memory_paired"):
+            comp["params"]["dark_count_rate"] = 1.0
+
+    res = run_experiment(doc)
+    assert res["metrics"]["swappers"]["es"]["completed"] == 0
+    # Pair-ID-matched outcomes must be strictly zero despite 100 dark clicks/side.
+    assert res["readers"]["reader"] == {"00": 0, "01": 0, "10": 0, "11": 0}
+    coinc = res["metrics"]["readers_coincidences"]["reader"]
+    assert coinc["true_pair_coincidences"] == 0
+    assert coinc["accidental_coincidences"] == 100
+    assert coinc["dark_clicks_1"] == 100
+    assert coinc["dark_clicks_2"] == 100
+
+
+def test_coincidence_window_filters_out_of_window_clicks():
+    from Classic_data_reader import Classic_data_reader
+    from Signals import MeasurementResult
+
+    sim_narrow = Simulation(seed=0)
+    r_narrow = Classic_data_reader("r", sim=sim_narrow, coincidence_window=1.0)
+    sim_narrow.add(10, lambda: r_narrow.input_1.handle(MeasurementResult("0", pair_id=None, is_dark_count=True)))
+    sim_narrow.add(12, lambda: r_narrow.input_2.handle(MeasurementResult("0", pair_id=None, is_dark_count=True)))
+    sim_narrow.run(20)
+    assert r_narrow.coincidence_summary()["total"] == 0
+
+    sim_wide = Simulation(seed=0)
+    r_wide = Classic_data_reader("r", sim=sim_wide, coincidence_window=2.0)
+    sim_wide.add(10, lambda: r_wide.input_1.handle(MeasurementResult("0", pair_id=None, is_dark_count=True)))
+    sim_wide.add(12, lambda: r_wide.input_2.handle(MeasurementResult("0", pair_id=None, is_dark_count=True)))
+    sim_wide.run(20)
+    assert r_wide.coincidence_summary()["accidental_coincidences"] == 1
+    assert r_wide.count_00 == 0
+
+
+def test_sparse_dark_counts_accidental_rate_scales_as_r_squared():
+    doc = _base_doc()
+    doc["run"]["until"] = 4000
+    doc["run"]["seed"] = 77
+    for c in doc["connections"]:
+        if c["from"]["component"].startswith("source_"):
+            c["loss_p"] = 1.0
+    for comp in doc["components"]:
+        if comp["type"] in ("measurer", "measurer_memory_paired"):
+            comp["params"]["dark_count_rate"] = 0.05
+
+    res = run_experiment(doc)
+    assert res["readers"]["reader"] == {"00": 0, "01": 0, "10": 0, "11": 0}
+    coinc = res["metrics"]["readers_coincidences"]["reader"]
+    # Expected ~0.05^2 * 4000 = 10 accidental coincidences (far below the ~200 clicks per side).
+    assert coinc["dark_clicks_1"] > 100
+    assert coinc["dark_clicks_2"] > 100
+    assert coinc["accidental_coincidences"] < 35
+
+
+# ---------------------------------------------------------------- chain hardware integration
+
+def test_chain_hardware_models_affect_fidelity_and_visibility_zero_gives_quarter():
+    from damn_q.chain import ChainConfig, run_repeater_chain
+
+    # V = 0 on a 2-hop chain leaves every swapped pair maximally mixed (F = 0.25).
+    r_v0 = run_repeater_chain(
+        ChainConfig(
+            num_hops=2,
+            until=4000,
+            seed=11,
+            attempt_period=200,
+            link_delay=10,
+            swap_delay=1,
+            loss_p=0.0,
+            channel_depolarization_p=0.0,
+            memory_depolarization_p=0.0,
+            bsm_visibility=0.0,
+        )
+    )
+    assert r_v0["delivered_pairs"] > 0
+    assert r_v0["fidelity"]["mean"] == pytest.approx(0.25, abs=1e-12)
+
+    # Werner + T1/T2 on 2-hop chain degrades fidelity strictly below initial_fidelity.
+    r_hw = run_repeater_chain(
+        ChainConfig(
+            num_hops=2,
+            until=4000,
+            seed=11,
+            tick_duration_s=1e-5,
+            attempt_period=200,
+            link_delay=0,
+            swap_delay=1,
+            loss_p=0.0,
+            channel_depolarization_p=0.0,
+            memory_depolarization_p=0.0,
+            length_km=10.0,
+            initial_fidelity=0.95,
+            memory_t1_ticks=200.0,
+            memory_t2_ticks=150.0,
+            bsm_visibility=0.9,
+            detector_efficiency=0.8,
+        )
+    )
+    assert r_hw["delivered_pairs"] > 0
+    assert 0.25 < r_hw["fidelity"]["mean"] < 0.95
+
+
+def test_chain_hardware_config_rejects_invalid_params():
+    from damn_q.chain import ChainConfig, run_repeater_chain
+
+    for kwargs in (
+        {"memory_t1_ticks": 10.0, "memory_t2_ticks": 25.0},
+        {"bsm_visibility": 1.2},
+        {"initial_fidelity": 0.1},
+        {"detector_efficiency": 0.0},
+        {"length_km": -1.0},
+    ):
+        with pytest.raises(ValueError):
+            run_repeater_chain(ChainConfig(**kwargs))
+

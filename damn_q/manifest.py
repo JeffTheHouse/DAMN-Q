@@ -436,7 +436,7 @@ COMPONENT_MANIFEST = {
                 "unit": "per tick",
                 "description": (
                     "Probability per simulation tick of a spurious click without pair ID. "
-                    "Dark counts are paired by arrival order by the Joint Outcome Counter."
+                    "Excluded from pair-ID-matched outcomes; counted in windowed physical coincidences."
                 ),
             },
         },
@@ -528,7 +528,7 @@ COMPONENT_MANIFEST = {
                 "unit": "per tick",
                 "description": (
                     "Probability per simulation tick of a spurious click without pair ID. "
-                    "Dark counts are paired by arrival order by the Joint Outcome Counter."
+                    "Excluded from pair-ID-matched outcomes; counted in windowed physical coincidences."
                 ),
             },
         },
@@ -536,7 +536,7 @@ COMPONENT_MANIFEST = {
     "classic_data_reader": {
         "label": "Joint Outcome Counter",
         "category": "diagnostics",
-        "model": "Pairs two classical outcome streams by arrival order (00/01/10/11)",
+        "model": "Matches outcomes by pair ID (00/01/10/11) and counts windowed physical coincidences",
         "version": "1.0",
         "ports": {
             "input_1": {
@@ -554,7 +554,19 @@ COMPONENT_MANIFEST = {
                 "max_connections": 1,
             },
         },
-        "parameters": {},
+        "parameters": {
+            "coincidence_window": {
+                "type": "number",
+                "min": 0.0,
+                "default": 0.0,
+                "label": "Coincidence window",
+                "unit": "simulation ticks",
+                "description": (
+                    "Maximum arrival-time difference |t1 - t2| for physical detector coincidences "
+                    "(including dark counts). Pair-ID-matched counts exclude untagged clicks."
+                ),
+            },
+        },
     },
     "detector_module": {
         "label": "Qubit Arrival Monitor",

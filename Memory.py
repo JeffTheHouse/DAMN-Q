@@ -75,14 +75,14 @@ class Quantum_memory:
         return len(self.memory) + len(self.temperory_memory)
 
     def _storage_kraus(self, passed_time):
-        """Amplitude-damping and dephasing Kraus lists for `passed_time` ticks in memory."""
+        """Amplitude-damping and dephasing Kraus lists for `passed_time` ticks in memory.
+
+        T1/T2 decay is continuous in time (exp(-t/T1), exp(-2t/T_phi)), so fractional
+        storage durations (e.g. from a 0.5-tick component delay) are supported directly.
+        """
         if self.t1 == 0 and self.t2 == 0:
             return [], []
-        if not float(passed_time).is_integer():
-            raise ValueError(
-                f"Storage decoherence requires integer storage ticks, got {passed_time}"
-            )
-        return storage_decoherence_kraus(int(round(passed_time)), self.t1, self.t2)
+        return storage_decoherence_kraus(float(passed_time), self.t1, self.t2)
 
     def _evict_oldest(self):
         oldest_confirmed = None

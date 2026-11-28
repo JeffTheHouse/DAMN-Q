@@ -21,6 +21,15 @@ import math
 import time
 import numpy as np
 
+from Hardware_models import (
+    DEFAULT_FIBRE_ATTENUATION_DB_PER_KM,
+    combined_loss_p,
+    fibre_loss_p,
+    propagation_ticks,
+    storage_decoherence_kraus,
+    validate_storage_times,
+    werner_bell_density,
+)
 from Memory import _composed_depolarization_p
 from Operators import x_operator, z_operator
 from Qubits import Qubit, Register, State
@@ -42,6 +51,15 @@ class ChainConfig:
     channel_depolarization_p: float = 0.005
     memory_depolarization_p: float = 0.0005
     memory_cutoff: float = 0.0  # 0 = no cutoff
+    # Step 3 hardware-model parameters (defaults preserve ideal / Step 2 behavior)
+    length_km: float = 0.0
+    attenuation_db_per_km: float = DEFAULT_FIBRE_ATTENUATION_DB_PER_KM
+    coupling_loss_db: float = 0.0
+    initial_fidelity: float = 1.0
+    memory_t1_ticks: float = 0.0
+    memory_t2_ticks: float = 0.0
+    bsm_visibility: float = 1.0
+    detector_efficiency: float = 1.0
     trace: bool = False
     profile: bool = False
 
@@ -112,6 +130,14 @@ class RepeaterChain:
             "loss_p",
             "channel_depolarization_p",
             "memory_depolarization_p",
+            "length_km",
+            "attenuation_db_per_km",
+            "coupling_loss_db",
+            "initial_fidelity",
+            "memory_t1_ticks",
+            "memory_t2_ticks",
+            "bsm_visibility",
+            "detector_efficiency",
         ):
             val = getattr(config, name)
             if not math.isfinite(val):
@@ -128,12 +154,33 @@ class RepeaterChain:
             raise ValueError(f"swap_delay must be >= 0, got {config.swap_delay}")
         if config.memory_cutoff < 0:
             raise ValueError(f"memory_cutoff must be >= 0, got {config.memory_cutoff}")
-        for name in ("loss_p", "channel_depolarization_p", "memory_depolarization_p"):
+        for name in ("loss_p", "channel_depolarization_p", "memory_depolarization_p", "bsm_visibility"):
             val = getattr(config, name)
             if not (0.0 <= val <= 1.0):
                 raise ValueError(f"{name} must be in [0, 1], got {val}")
+        if not (0.25 <= config.initial_fidelity <= 1.0):
+            raise ValueError(f"initial_fidelity must be in [0.25, 1], got {config.initial_fidelity}")
+        if not (0.0 < config.detector_efficiency <= 1.0):
+            raise ValueError(f"detector_efficiency must be in (0, 1], got {config.detector_efficiency}")
+        for name in ("length_km", "attenuation_db_per_km", "coupling_loss_db"):
+            val = getattr(config, name)
+            if val < 0:
+                raise ValueError(f"{name} must be >= 0, got {val}")
+        validate_storage_times(config.memory_t1_ticks, config.memory_t2_ticks)
 
         self.cfg = config
+        # Effective per-arm delay and loss including optional fibre and detector efficiency.
+        self._eff_link_delay = config.link_delay + propagation_ticks(
+            config.length_km, config.tick_duration_s
+        )
+        fibre_p = fibre_loss_p(config.length_km, config.attenuation_db_per_km, config.coupling_loss_db)
+        eff_loss = combined_loss_p(config.loss_p, fibre_p)
+        if config.detector_efficiency < 1.0:
+            eff_loss = combined_loss_p(eff_loss, 1.0 - config.detector_efficiency)
+        self._eff_loss_p = eff_loss
+        self._init_pair_rho = (
+            phi_plus if config.initial_fidelity == 1.0 else werner_bell_density(config.initial_fidelity)
+        )
         self.sim = Simulation(seed=config.seed)
         self.n = config.num_hops
 
@@ -166,15 +213,29 @@ class RepeaterChain:
         return self._seg_counter
 
     def _apply_storage_noise(self, qubit, arrival_time):
-        if self.cfg.memory_depolarization_p == 0.0 or qubit.state is None:
+        if qubit.state is None:
+            return
+        has_depol = self.cfg.memory_depolarization_p > 0.0
+        has_t12 = self.cfg.memory_t1_ticks > 0.0 or self.cfg.memory_t2_ticks > 0.0
+        if not has_depol and not has_t12:
             return
         ticks = self.sim.time - arrival_time
         if ticks <= 0:
             return
-        p_eff = _composed_depolarization_p(self.cfg.memory_depolarization_p, ticks)
-        if p_eff != 0.0:
+        p_eff = _composed_depolarization_p(self.cfg.memory_depolarization_p, ticks) if has_depol else 0.0
+        ad_ops, pd_ops = (
+            storage_decoherence_kraus(float(ticks), self.cfg.memory_t1_ticks, self.cfg.memory_t2_ticks)
+            if has_t12
+            else ([], [])
+        )
+        if p_eff != 0.0 or ad_ops or pd_ops:
             t0 = time.perf_counter() if self.cfg.profile else 0.0
-            qubit.depolarize(p_eff)
+            if p_eff != 0.0:
+                qubit.depolarize(p_eff)
+            if ad_ops:
+                qubit.apply_kraus(ad_ops)
+            if pd_ops:
+                qubit.apply_kraus(pd_ops)
             if self.cfg.profile:
                 self._reg_time_s += time.perf_counter() - t0
 
@@ -227,16 +288,16 @@ class RepeaterChain:
         self.link_busy[k] = True
         self.attempts += 1
         t0_attempt = self.sim.time
-        arr_time = t0_attempt + self.cfg.link_delay
-        herald_time_delay = self.cfg.link_delay + 1 + self.cfg.link_delay
+        arr_time = t0_attempt + self._eff_link_delay
+        herald_time_delay = self._eff_link_delay + 1 + self._eff_link_delay
 
         t0 = time.perf_counter() if self.cfg.profile else 0.0
-        q_l, q_r = Qubit.bell_state(1, 2, State(phi_plus.copy()), created_at=t0_attempt)
+        q_l, q_r = Qubit.bell_state(1, 2, State(self._init_pair_rho.copy()), created_at=t0_attempt)
         if self.cfg.channel_depolarization_p > 0.0:
             q_l.depolarize(self.cfg.channel_depolarization_p)
             q_r.depolarize(self.cfg.channel_depolarization_p)
-        q_l.loss(self.cfg.loss_p, rng=self.sim.rng)
-        q_r.loss(self.cfg.loss_p, rng=self.sim.rng)
+        q_l.loss(self._eff_loss_p, rng=self.sim.rng)
+        q_r.loss(self._eff_loss_p, rng=self.sim.rng)
         if self.cfg.profile:
             self._reg_time_s += time.perf_counter() - t0
 
@@ -317,7 +378,9 @@ class RepeaterChain:
         self._apply_storage_noise(seg_r.q_left, seg_r.left_arrival)
 
         t0 = time.perf_counter() if self.cfg.profile else 0.0
-        outcome, _ = Register.bell_measure(seg_l.q_right, seg_r.q_left, rng=self.sim.rng)
+        outcome, _ = Register.bell_measure_imperfect(
+            seg_l.q_right, seg_r.q_left, visibility=self.cfg.bsm_visibility, rng=self.sim.rng
+        )
         if self.cfg.profile:
             self._reg_time_s += time.perf_counter() - t0
         self.swaps_completed += 1
@@ -349,12 +412,12 @@ class RepeaterChain:
         if new_seg.left_node == 0 and new_seg.right_node == self.n:
             # End-to-end swap completed: schedule classical feed-forward to endpoints
             max_hops = max(node - new_seg.left_node, new_seg.right_node - node)
-            ff_delay = self.cfg.swap_delay + max_hops * self.cfg.link_delay
+            ff_delay = self.cfg.swap_delay + max_hops * self._eff_link_delay
             self.sim.add(ff_delay, lambda s=new_seg: self._deliver_end_to_end(s))
         else:
             # Notify both endpoints after classical propagation delay before downstream swaps
-            left_delay = self.cfg.swap_delay + (node - new_seg.left_node) * self.cfg.link_delay
-            right_delay = self.cfg.swap_delay + (new_seg.right_node - node) * self.cfg.link_delay
+            left_delay = self.cfg.swap_delay + (node - new_seg.left_node) * self._eff_link_delay
+            right_delay = self.cfg.swap_delay + (new_seg.right_node - node) * self._eff_link_delay
             self.sim.add(left_delay, lambda s=new_seg: self._on_swap_notify(s, "left"))
             self.sim.add(right_delay, lambda s=new_seg: self._on_swap_notify(s, "right"))
 

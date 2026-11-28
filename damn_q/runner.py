@@ -232,7 +232,11 @@ def _instantiate_component(comp_id, ctype, params, sim):
             dark_count_rate=params["dark_count_rate"],
         )
     if ctype == "classic_data_reader":
-        return Classic_data_reader(comp_id, sim=sim)
+        return Classic_data_reader(
+            comp_id,
+            sim=sim,
+            coincidence_window=params["coincidence_window"],
+        )
     if ctype == "detector_module":
         return Detector_module(comp_id, trace=bool(params["trace"]), sim=sim)
     if ctype == "endpoint_probe":
@@ -312,7 +316,9 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
     sources_metrics = {}
     memories_metrics = {}
     swappers_metrics = {}
+    measurers_metrics = {}
     readers_unmatched = {}
+    readers_coincidences = {}
 
     for cid, obj in instances.items():
         ctype = types[cid]
@@ -330,6 +336,11 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
                 "expired": obj.expired_count,
                 "rejected": obj.rejected_count,
             }
+        elif ctype in ("measurer", "measurer_memory_paired"):
+            measurers_metrics[cid] = {
+                "dark_counts": obj.dark_counts,
+                "missed_detections": obj.missed_detections,
+            }
         elif ctype == "classic_data_reader":
             readers[cid] = {
                 "00": obj.count_00,
@@ -341,6 +352,7 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
                 "unmatched_1": obj.unmatched_1,
                 "unmatched_2": obj.unmatched_2,
             }
+            readers_coincidences[cid] = obj.coincidence_summary()
         elif ctype == "detector_module":
             detectors[cid] = {
                 "total_1": obj.Total_qubits_1,
@@ -373,7 +385,9 @@ def run_experiment(doc_or_path, *, seed_override=None, until_override=None):
             "sources": sources_metrics,
             "memories": memories_metrics,
             "swappers": swappers_metrics,
+            "measurers": measurers_metrics,
             "readers_unmatched": readers_unmatched,
+            "readers_coincidences": readers_coincidences,
         },
     }
     if tick_duration_s is not None:

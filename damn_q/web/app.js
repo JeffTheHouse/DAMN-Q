@@ -974,13 +974,24 @@
       }
     }
 
+    const coincMap = (result.metrics && result.metrics.readers_coincidences) || {};
     for (const [rid, counts] of Object.entries(result.readers || {})) {
       const card = document.createElement("div");
       card.className = "result-card";
+      const c = coincMap[rid];
+      const coincRows =
+        c && (c.accidental_coincidences || c.dark_clicks_1 || c.dark_clicks_2)
+          ? `
+        <div class="metric-row"><span>Coincidences (|&Delta;t| &le; ${c.window})</span><span>${c.total} (true ${c.true_pair_coincidences} / acc. ${c.accidental_coincidences})</span></div>
+        <div class="metric-row"><span>Dark clicks (in 1 / in 2)</span><span>${c.dark_clicks_1} / ${c.dark_clicks_2}</span></div>
+      `
+          : "";
       card.innerHTML = `
         <h3>Joint Outcome Counter: ${escapeHtml(rid)}</h3>
+        <div class="field-help">Matched by pair ID (excludes untagged / dark clicks)</div>
         <div class="metric-row"><span>00 / 11</span><span>${counts["00"]} / ${counts["11"]}</span></div>
         <div class="metric-row"><span>01 / 10</span><span>${counts["01"]} / ${counts["10"]}</span></div>
+        ${coincRows}
       `;
       frag.appendChild(card);
     }
