@@ -204,3 +204,20 @@ def test_stress_gate_includes_hardware_hop_sweep_and_isolated_parity():
     assert report["hardware_hop_sweep"]["passed"] is True
     assert len(report["hardware_hop_sweep"]["rows"]) == 2
     assert report["gate_passed"] is True
+
+
+def test_hardware_sweep_gate_checks_fidelity_bounds_on_every_row():
+    from benchmarks.run_stress_gate import _hardware_sweep_passed
+
+    valid_rows = [
+        {"num_hops": 8, "delivered_pairs": 19, "cancelled_queue_len": 0, "fidelity": {"mean": 0.25}},
+        {"num_hops": 64, "delivered_pairs": 2, "cancelled_queue_len": 0, "fidelity": {"mean": 0.25}},
+    ]
+    assert _hardware_sweep_passed(valid_rows) is True
+
+    for bad_f in (1.25, -0.01, float("nan"), float("inf"), None):
+        bad_rows = [
+            valid_rows[0],
+            {"num_hops": 64, "delivered_pairs": 2, "cancelled_queue_len": 0, "fidelity": {"mean": bad_f}},
+        ]
+        assert _hardware_sweep_passed(bad_rows) is False

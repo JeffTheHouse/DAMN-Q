@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -21,6 +22,21 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.run_chain_benchmark import run_chain_scaling_benchmark
+
+
+def _hardware_sweep_passed(rows):
+    if not rows:
+        return False
+    if not all(r["cancelled_queue_len"] < 64 for r in rows):
+        return False
+    if rows[0]["delivered_pairs"] <= 0:
+        return False
+    for r in rows:
+        if r["delivered_pairs"] > 0:
+            f_mean = r.get("fidelity", {}).get("mean")
+            if f_mean is None or not math.isfinite(f_mean) or not (0.0 <= f_mean <= 1.0):
+                return False
+    return True
 
 
 def run_stress_gate(
@@ -116,13 +132,7 @@ def run_stress_gate(
         isolate_processes=True,
     )["rows"]
 
-    hardware_sweep_passed = bool(
-        hardware_hop_sweep
-        and all(r["cancelled_queue_len"] < 64 for r in hardware_hop_sweep)
-        and hardware_hop_sweep[0]["delivered_pairs"] > 0
-        and hardware_hop_sweep[0]["fidelity"]["mean"] is not None
-        and 0.0 < hardware_hop_sweep[0]["fidelity"]["mean"] <= 1.0
-    )
+    hardware_sweep_passed = _hardware_sweep_passed(hardware_hop_sweep)
 
     retention_passed = (
         dur_10x["live_queue_len"] <= max(dur_1x["live_queue_len"] * 2, dur_hops * 4)
