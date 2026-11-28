@@ -63,8 +63,13 @@ def _worker_validate(exp_json):
 
 def _worker_run(exp_json):
     exp = json.loads(exp_json)
+    # Validate first so bad input returns readable errors instead of a Python traceback
+    try:
+        validate_experiment(exp)
+    except ExperimentValidationError as exc:
+        return json.dumps({"ok": False, "errors": [str(exc)]})
     res = run_experiment(exp)
-    return json.dumps(res)
+    return json.dumps({"ok": True, "result": res})
 # --- DAMN_Q_WORKER_BOOTSTRAP_END ---
 `);
     return pyodide;
@@ -99,6 +104,10 @@ self.onmessage = async (event) => {
     }
     throw new Error(`Unknown worker action: ${action}`);
   } catch (err) {
-    self.postMessage({ id, ok: false, error: err ? String(err.message || err) : "Worker error" });
+    // Keep the full traceback in the console; show only the final "ExceptionType: message" line in the UI
+    const full = err ? String(err.message || err) : "Worker error";
+    console.error(full);
+    const lines = full.trim().split("\n").filter(Boolean);
+    self.postMessage({ id, ok: false, error: lines.length ? lines[lines.length - 1] : "Worker error" });
   }
 };

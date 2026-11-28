@@ -73,8 +73,9 @@
     if (url === "/api/run") {
       const exp = JSON.parse((init && init.body) || "{}");
       try {
-        const result = await callWorker("run", { experiment: exp });
-        return jsonResponse({ ok: true, result });
+        const data = await callWorker("run", { experiment: exp });
+        if (!data.ok) return jsonResponse({ ok: false, errors: data.errors || ["Run failed"] }, 400);
+        return jsonResponse({ ok: true, result: data.result });
       } catch (err) {
         return jsonResponse({ ok: false, error: err.message }, 400);
       }

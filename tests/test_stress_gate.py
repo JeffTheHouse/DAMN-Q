@@ -145,9 +145,15 @@ def test_pyodide_worker_bootstrap_and_bundle_builder(tmp_path):
         + f"v = json.loads(_worker_validate({exp_ideal!r}))\n"
         + f"assert v['valid'] is True and v['schema_version'] == m['schema_version']\n"
         + f"r1 = json.loads(_worker_run({exp_ideal!r}))\n"
-        + f"assert abs(r1['measurements'][0]['mean_fidelity'] - 1.0) < 1e-12\n"
+        + f"assert r1['ok'] is True\n"
+        + f"assert abs(r1['result']['measurements'][0]['mean_fidelity'] - 1.0) < 1e-12\n"
         + f"r2 = json.loads(_worker_run({exp_tut!r}))\n"
-        + f"assert r2['readers']['reader'] == {{'00': 39, '01': 0, '10': 0, '11': 44}}\n"
+        + f"assert r2['ok'] is True\n"
+        + f"assert r2['result']['readers']['reader'] == {{'00': 39, '01': 0, '10': 0, '11': 44}}\n"
+        + f"bad = json.loads({exp_ideal!r}); bad['run']['until'] = 0\n"
+        + f"r3 = json.loads(_worker_run(json.dumps(bad)))\n"
+        + f"assert r3['ok'] is False and any('run.until' in e for e in r3['errors']), r3\n"
+        + f"assert 'Traceback' not in json.dumps(r3)\n"
         + "print('BUNDLE_ISOLATED_OK')\n"
     )
 

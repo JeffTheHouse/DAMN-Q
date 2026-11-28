@@ -111,6 +111,12 @@
     // Deep-clean clone keeping schema 1.0 structure
     const doc = JSON.parse(JSON.stringify(state.doc));
     doc.schema_version = doc.schema_version || (state.manifest ? state.manifest.schema_version : "1.0");
+    // Read Until and Seed from the toolbar at build time, so Run/Export always reflect what the user sees
+    // (this does not depend on which DOM event fired). Empty Until is sent as null so validation reports it.
+    const untilText = els.runUntil.value.trim();
+    doc.run.until = untilText === "" ? null : Number(untilText);
+    const seedText = els.runSeed.value.trim();
+    doc.run.seed = seedText === "" ? null : parseInt(seedText, 10);
     return doc;
   }
 
@@ -1071,6 +1077,8 @@
         const text = await file.text();
         setExperiment(JSON.parse(text));
         fitView();
+        // Validate immediately so unknown components or schema problems are reported at import time
+        await validateCurrent();
       } catch (err) {
         renderErrors([`Could not parse JSON file: ${err.message}`]);
       } finally {
